@@ -55,7 +55,7 @@ def check_internet_plagiarism(student_text):
 if __name__ == "__main__":
 
     submission = """
-    Bulbasaur is generally considered one of the most popular and widely liked Pokémon, having ranked highly in official popularity polls.[5] Series producer Junichi Masuda has also specifically mentioned Bulbasaur as one of his favorite Pokémon. Its role in the anime has been suggested to have played a factor into its popularity.
+    Bulbasaur is generally considered one of the most popular and widely liked Pokémon, having ranked highly in official popularity polls. Series producer Junichi Masuda has also specifically mentioned Bulbasaur as one of his favorite Pokémon. Its role in the anime has been suggested to have played a factor into its popularity.
     """
     
     print("STARTING PLAGIARISM CHECK...")

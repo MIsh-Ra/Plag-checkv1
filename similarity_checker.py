@@ -1,43 +1,43 @@
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.metrics.pairwise import cosine_similarity
+from sentence_transformers import SentenceTransformer, util
 import warnings
 
 warnings.filterwarnings("ignore")
+
+print("Loading AI Model (all-MiniLM-L6-v2)...")
+model = SentenceTransformer('all-MiniLM-L6-v2')
 
 def calculate_similarity(text1, text2):
     if not text1 or not text2:
         return 0.0
     
-    if len(text2) < 50: 
+    if len(text2) < 20: 
         return 0.0
 
-    documents = [text1, text2]
-    
     try:
-        vectorizer = TfidfVectorizer()
-        tfidf_matrix = vectorizer.fit_transform(documents)
+        embedding_1 = model.encode(text1, convert_to_tensor=True)
+        embedding_2 = model.encode(text2, convert_to_tensor=True)
         
-        similarity_matrix = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+        score = util.cos_sim(embedding_1, embedding_2).item()
         
-        return similarity_matrix[0][0]
+        return max(0.0, score)
         
     except Exception as e:
         print(f"Similarity Error: {e}")
         return 0.0
 
 if __name__ == "__main__":
-    print("--- TESTING SIMILARITY ---")
+    print("\n--- TESTING SEMANTIC AI ---")
     
-    student_essay = "The mitochondria is the powerhouse of the cell."
+    student = "The quick brown fox jumps over the lazy dog."
     
-    web_source_1 = "The mitochondria is the powerhouse of the cell."
-    score1 = calculate_similarity(student_essay, web_source_1)
-    print(f"Exact Match Score: {score1:.2f}")
+    match_text = "The quick brown fox jumps over the lazy dog."
+    score1 = calculate_similarity(student, match_text)
+    print(f"Exact Match:   {int(score1*100)}%")
+
+    synonym_text = "A fast brown fox leaps above a tired canine."
+    score2 = calculate_similarity(student, synonym_text)
+    print(f"Synonym Check: {int(score2*100)}% (Should be high)")
     
-    web_source_2 = "Python is a great programming language for data science."
-    score2 = calculate_similarity(student_essay, web_source_2)
-    print(f"Different Topic Score: {score2:.2f}")
-    
-    web_source_3 = "Mitochondria act as the powerhouses for cells, generating energy."
-    score3 = calculate_similarity(student_essay, web_source_3)
-    print(f"Paraphrased Score: {score3:.2f}")
+    diff_text = "Python is a programming language used for data science."
+    score3 = calculate_similarity(student, diff_text)
+    print(f"Random Text:   {int(score3*100)}% (Should be low)")
