@@ -84,3 +84,9 @@
     - Login -> Dashboard -> Upload -> Report Analysis -> Admin Config.
     - **Issues Resolved:** Fixed initial crash by installing missing `tailwindcss-animate` and downgrading to Tailwind v3 for compatibility.
 - **Status:** Phase 2 Complete. Frontend is ready.
+
+### Documentation Update
+- Created `README.md` in `Alethian/` root.
+- Documented Quick Start for Docker Infrastructure.
+- Documented Frontend setup (Mock Mode) and credentials.
+- Added placeholder instructions for Backend setup (Phase 3).

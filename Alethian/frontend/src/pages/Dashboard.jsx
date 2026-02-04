@@ -119,7 +119,11 @@ export default function Dashboard() {
                     ) : (
                         <ul className="divide-y divide-gray-200">
                             {documents.map((doc) => (
-                                <li key={doc.id} className="hover:bg-gray-50 transition-colors">
+                                <li
+                                    key={doc.id}
+                                    onClick={() => navigate(`/report/${doc.id}`)}
+                                    className="hover:bg-gray-50 transition-colors cursor-pointer"
+                                >
                                     <div className="px-6 py-4 flex items-center justify-between">
                                         <div className="flex items-center">
                                             <div className="flex-shrink-0">
@@ -133,7 +137,6 @@ export default function Dashboard() {
                                         <div className="flex items-center space-x-6">
                                             {getStatusBadge(doc.status, doc.score)}
                                             <button
-                                                onClick={() => navigate(`/report/${doc.id}`)}
                                                 className="text-gray-400 hover:text-blue-600 transition-colors"
                                             >
                                                 <ArrowRight className="w-5 h-5" />
