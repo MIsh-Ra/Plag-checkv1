@@ -1,0 +1,72 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------------------
+  # Data Layer
+  # -------------------------------------------------------------------------
+  postgres:
+    image: postgres:15-alpine
+    container_name: alethian_postgres
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-alethian}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-alethian_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-alethian_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - alethian_net
+
+  redis:
+    image: redis:7-alpine
+    container_name: alethian_redis
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - alethian_net
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: alethian_qdrant
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "6333:6333"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      - alethian_net
+
+  # -------------------------------------------------------------------------
+  # Compute Layer
+  # -------------------------------------------------------------------------
+  grobid:
+    image: grobid/grobid:0.8.0
+    container_name: alethian_grobid
+    restart: unless-stopped
+    env_file:
+      - ../.env
+    ports:
+      - "8070:8070"
+    networks:
+      - alethian_net
+
+volumes:
+  postgres_data:
+  redis_data:
+  qdrant_data:
+
+
+networks:
+  alethian_net:
+    driver: bridge
