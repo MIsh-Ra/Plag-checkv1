@@ -5,7 +5,10 @@ Thumbs.db
 
 # Editors / IDEs
 .idea/
-.vscode/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
 *.swp
 *.swo
 

@@ -90,3 +90,8 @@
 - Documented Quick Start for Docker Infrastructure.
 - Documented Frontend setup (Mock Mode) and credentials.
 - Added placeholder instructions for Backend setup (Phase 3).
+
+### Documentation: Remote Workflow
+- Created `Alethian/Documents/Remote_Development.md`.
+- Documented VS Code Remote-SSH workflow for seamless "local feel, remote execution" development.
+- Documented SSH Port Forwarding for browser testing.
