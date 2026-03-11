@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MockClient from '../api/mock_client';
+import Client from '../api/client';
 import { FileText, Upload, Plus, CheckCircle, Clock, AlertTriangle, ArrowRight, Loader2 } from 'lucide-react';
 
 export default function Dashboard() {
@@ -16,7 +16,7 @@ export default function Dashboard() {
 
     const loadDocuments = async () => {
         try {
-            const docs = await MockClient.documents.list();
+            const docs = await Client.documents.list();
             setDocuments(docs);
         } catch (error) {
             console.error("Failed to load documents", error);
@@ -31,7 +31,7 @@ export default function Dashboard() {
 
         setUploading(true);
         try {
-            const newDoc = await MockClient.documents.upload(file);
+            const newDoc = await Client.documents.upload(file);
             // In real app, we'd poll for status. Here we just add it to list.
             const mockEntry = {
                 ...newDoc,

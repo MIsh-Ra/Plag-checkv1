@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MockClient from '../api/mock_client';
+import Client from '../api/client';
 import { Loader2 } from 'lucide-react';
 
 export default function Login() {
@@ -16,7 +16,7 @@ export default function Login() {
         setError('');
 
         try {
-            const response = await MockClient.auth.login(email, password);
+            const response = await Client.auth.login(email, password);
             console.log("Login Success:", response);
             // In a real app, store token in localStorage/Context
             localStorage.setItem('alethian_token', response.access_token);

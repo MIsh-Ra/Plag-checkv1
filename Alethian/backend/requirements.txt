@@ -1,0 +1,13 @@
+fastapi
+uvicorn
+python-multipart
+requests
+beautifulsoup4
+lxml
+celery
+redis
+sqlalchemy
+psycopg2-binary
+pytest
+httpx
+pydantic-settings

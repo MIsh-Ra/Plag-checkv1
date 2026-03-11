@@ -127,3 +127,29 @@
   }
   ```
 - **Response (200 OK):** `{"message": "Configuration updated"}`
+
+---
+
+## 5. External Service Interfaces (Backend-to-API)
+
+### 5.1 Semantic Scholar & Unpaywall (Reference Validation)
+- **Primary Use:** Verifying citation existence and retrieving abstracts.
+- **Endpoints Used:**
+    - `GET https://api.semanticscholar.org/graph/v1/paper/{DOI}`
+    - `GET https://api.semanticscholar.org/graph/v1/paper/search?query={title}`
+- **Data Transmitted:** Anonymized query strings (paper titles, DOIs). **No student PII.**
+- **Error Handling:** Fallback to Unpaywall if Semantic Scholar is down or rate-limited.
+
+### 5.2 Serper.dev (Google Search Dragnet)
+- **Primary Use:** Detecting plagiarism from the open web.
+- **Endpoints Used:**
+    - `POST https://google.serper.dev/search`
+- **Payload:**
+    ```json
+    {
+      "q": "suspicious text chunk...",
+      "num": 3
+    }
+    ```
+- **Data Transmitted:** Short, randomized text shingle (approx. 50 words).
+- **Constraints:** Strict rate-limiting to prevent quota exhaustion.

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import MockClient from '../api/mock_client';
+import Client from '../api/client';
 import { Save, RefreshCw, Check, AlertCircle, Shield, Key } from 'lucide-react';
 
 export default function AdminPanel() {
@@ -16,7 +16,7 @@ export default function AdminPanel() {
 
     const loadConfig = async () => {
         try {
-            const data = await MockClient.admin.getConfig();
+            const data = await Client.admin.getConfig();
             setConfig(data);
         } catch (error) {
             console.error("Failed to load config", error);
@@ -30,7 +30,7 @@ export default function AdminPanel() {
         setSaving(true);
         setMessage(null);
         try {
-            const result = await MockClient.admin.updateConfig(config);
+            const result = await Client.admin.updateConfig(config);
             setMessage({ type: 'success', text: result.message });
             setTimeout(() => setMessage(null), 3000);
         } catch (error) {

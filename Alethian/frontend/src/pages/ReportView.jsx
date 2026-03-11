@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import MockClient from '../api/mock_client';
+import Client from '../api/client';
 import { ChevronLeft, FileText, Globe, AlertTriangle, Check, X, Printer, Search } from 'lucide-react';
 
 export default function ReportView() {
@@ -16,7 +16,7 @@ export default function ReportView() {
 
     const loadReport = async () => {
         try {
-            const data = await MockClient.reports.get(id);
+            const data = await Client.reports.get(id);
             setReport(data);
         } catch (error) {
             console.error("Failed to load report", error);
