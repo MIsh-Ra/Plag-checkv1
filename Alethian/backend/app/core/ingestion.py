@@ -60,11 +60,22 @@ class GrobidClient:
                             "title": ref_title
                         })
 
+            # Estimate confidence from output quality
+            body_text = " ".join(s["text"] for s in sections)
+            confidence = 1.0
+            if len(body_text) < 100:  # Very little text extracted
+                confidence = 0.3
+            elif len(sections) < 2:
+                confidence = 0.6
+
             return {
                 "title": title,
                 "abstract": abstract,
                 "sections": sections,
-                "references": references
+                "references": references,
+                "body_text": body_text,
+                "page_count": len(sections),  # Estimate from section count
+                "confidence": confidence
             }
 
         except Exception as e:

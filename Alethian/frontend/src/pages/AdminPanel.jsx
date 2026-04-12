@@ -83,32 +83,17 @@ export default function AdminPanel() {
                         </div>
                         <div className="p-6 space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Semantic Scholar API Key</label>
-                                <div className="mt-1 flex rounded-md shadow-sm">
-                                    <input
-                                        type="password"
-                                        value={config.semantic_scholar_key}
-                                        onChange={(e) => setConfig({ ...config, semantic_scholar_key: e.target.value })}
-                                        className="flex-1 block w-full rounded-md border-gray-300 px-3 py-2 border focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                                    />
-                                    <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
-                                        {config.api_status.semantic_scholar === 'ok' ? <span className="text-green-600 flex items-center"><Check className="w-3 h-3 mr-1" /> Active</span> : "Error"}
-                                    </span>
-                                </div>
-                                <p className="mt-1 text-xs text-gray-500">Used for validating citations against the global scholarly record.</p>
-                            </div>
-
-                            <div>
                                 <label className="block text-sm font-medium text-gray-700">Serper.dev API Key (Google Search)</label>
                                 <div className="mt-1 flex rounded-md shadow-sm">
                                     <input
                                         type="password"
-                                        value={config.serper_key}
+                                        value={config.serper_key || ''}
                                         onChange={(e) => setConfig({ ...config, serper_key: e.target.value })}
-                                        className={`flex-1 block w-full rounded-md border px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${config.api_status.serper !== 'ok' ? 'border-red-300' : 'border-gray-300'}`}
+                                        className={`flex-1 block w-full rounded-md border px-3 py-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm ${config.api_status?.serper !== 'ok' ? 'border-red-300' : 'border-gray-300'}`}
+                                        placeholder="Enter key to update"
                                     />
                                     <span className="inline-flex items-center px-3 rounded-r-md border border-l-0 border-gray-300 bg-gray-50 text-gray-500 text-sm">
-                                        {config.api_status.serper === 'ok' ? "Active" : <span className="text-red-600 flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Quota Exceeded</span>}
+                                        {config.api_status?.serper === 'ok' ? "Active" : <span className="text-red-600 flex items-center"><AlertCircle className="w-3 h-3 mr-1" /> Missing/Error</span>}
                                     </span>
                                 </div>
                                 <p className="mt-1 text-xs text-gray-500">Used for the Web Dragnet layer to detect internet plagiarism.</p>
@@ -123,14 +108,20 @@ export default function AdminPanel() {
                         </div>
                         <div className="p-6">
                             <div>
-                                <label className="block text-sm font-medium text-gray-700">Similarity Threshold: {config.threshold_similarity}</label>
+                                <label className="block text-sm font-medium text-gray-700">Similarity Threshold: {config.similarity_thresholds?.semantic_cosine || 0.85}</label>
                                 <input
                                     type="range"
                                     min="0.5"
                                     max="0.99"
                                     step="0.01"
-                                    value={config.threshold_similarity}
-                                    onChange={(e) => setConfig({ ...config, threshold_similarity: parseFloat(e.target.value) })}
+                                    value={config.similarity_thresholds?.semantic_cosine || 0.85}
+                                    onChange={(e) => setConfig({ 
+                                        ...config, 
+                                        similarity_thresholds: { 
+                                            ...config.similarity_thresholds, 
+                                            semantic_cosine: parseFloat(e.target.value) 
+                                        } 
+                                    })}
                                     className="w-full mt-2"
                                 />
                                 <div className="flex justify-between text-xs text-gray-500 mt-1">

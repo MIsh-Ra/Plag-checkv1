@@ -2,22 +2,27 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Client from '../api/client';
 import { FileText, Upload, Plus, CheckCircle, Clock, AlertTriangle, ArrowRight, Loader2 } from 'lucide-react';
+import { useWebSocket } from '../hooks/useWebSocket';
 
 export default function Dashboard() {
     const [documents, setDocuments] = useState([]);
     const [loading, setLoading] = useState(true);
     const [uploading, setUploading] = useState(false);
+    const [latestDocId, setLatestDocId] = useState(null);
+    const wsStatus = useWebSocket(latestDocId).status;
     const navigate = useNavigate();
     const user = JSON.parse(localStorage.getItem('alethian_user') || '{}');
 
+    const [courseFilter, setCourseFilter] = useState('');
+
     useEffect(() => {
         loadDocuments();
-    }, []);
+    }, [courseFilter]);
 
     const loadDocuments = async () => {
         try {
-            const docs = await Client.documents.list();
-            setDocuments(docs);
+            const docs = await Client.documents.list({ course_id: courseFilter || undefined });
+            setDocuments(docs.items || docs || []);
         } catch (error) {
             console.error("Failed to load documents", error);
         } finally {
@@ -32,6 +37,7 @@ export default function Dashboard() {
         setUploading(true);
         try {
             const newDoc = await Client.documents.upload(file);
+            setLatestDocId(newDoc.id);
             // In real app, we'd poll for status. Here we just add it to list.
             const mockEntry = {
                 ...newDoc,
@@ -63,9 +69,9 @@ export default function Dashboard() {
                 </span>
             );
         }
-        // Complete
-        if (score > 80) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">High Risk ({score}%)</span>;
-        if (score > 40) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium Risk ({score}%)</span>;
+        // Complete (score is originality score, lower is worse)
+        if (score < 50) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">High Risk ({score}%)</span>;
+        if (score < 80) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium Risk ({score}%)</span>;
         return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Clean ({score}%)</span>;
     };
 
@@ -80,7 +86,11 @@ export default function Dashboard() {
                         </div>
                         <div className="flex items-center space-x-4">
                             <span className="text-sm text-gray-500">Welcome, {user.name || 'Faculty'}</span>
-                            <button onClick={() => navigate('/login')} className="text-sm font-medium text-gray-900 hover:text-blue-600">Logout</button>
+                            <button onClick={() => {
+                                localStorage.removeItem('alethian_token');
+                                localStorage.removeItem('alethian_user');
+                                navigate('/login');
+                            }} className="text-sm font-medium text-gray-900 hover:text-blue-600">Logout</button>
                         </div>
                     </div>
                 </div>
@@ -89,6 +99,19 @@ export default function Dashboard() {
             <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
                 {/* Upload Section */}
+                <div className="mb-8 flex justify-between items-center">
+                    <div className="w-1/3">
+                        <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Course ID</label>
+                        <input
+                            type="text"
+                            value={courseFilter}
+                            onChange={(e) => setCourseFilter(e.target.value)}
+                            placeholder="e.g. CS101"
+                            className="block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
+                        />
+                    </div>
+                </div>
+
                 <div className="mb-8">
                     <div className="bg-white border-2 border-dashed border-gray-300 rounded-lg p-12 text-center hover:border-blue-500 transition-colors cursor-pointer group relative">
                         <input
@@ -131,7 +154,7 @@ export default function Dashboard() {
                                             </div>
                                             <div className="ml-4">
                                                 <div className="text-sm font-medium text-gray-900">{doc.title}</div>
-                                                <div className="text-sm text-gray-500">Author: {doc.author} • Uploaded: {new Date(doc.uploaded_at).toLocaleDateString()}</div>
+                                                <div className="text-sm text-gray-500">Author: {doc.author} • Uploaded: {new Date(doc.upload_date).toLocaleDateString()}</div>
                                             </div>
                                         </div>
                                         <div className="flex items-center space-x-6">
@@ -146,7 +169,7 @@ export default function Dashboard() {
                                     {doc.status === 'processing' && (
                                         <div className="px-6 pb-2">
                                             <div className="w-full bg-gray-200 rounded-full h-1.5">
-                                                <div className="bg-blue-600 h-1.5 rounded-full" style={{ width: '45%' }}></div>
+                                                <div className="bg-blue-600 h-1.5 rounded-full animate-pulse" style={{ width: doc.status === 'processing' ? '60%' : '30%' }}></div>
                                             </div>
                                         </div>
                                     )}

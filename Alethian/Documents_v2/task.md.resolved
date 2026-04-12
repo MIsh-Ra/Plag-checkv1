@@ -1,0 +1,28 @@
+# Alethian v2 Remediation Checklist
+
+- [x] Phase A: Critical Wiring Fixes
+  - [x] A1: Register Missing Routers in [main.py](file:///home/akshit/Projects/Plag-checkv1/backup/main.py)
+  - [x] A2: Implement Real [run_similarity()](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#77-133)
+  - [x] A3: Wire Celery Worker to Persist All Records
+- [x] Phase B: Data Model Enrichment
+  - [x] B1: Extend All DB Models ([models.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py))
+  - [x] B2: Update All Pydantic Schemas (`schemas/*.py`)
+- [ ] Phase C: Authentication & Security
+  - [ ] C1: Create Auth Module and settings
+- [ ] Phase D: Admin API
+  - [ ] D1: Create Admin module
+- [x] Phase E: Complete Report Engine
+  - [x] E1: Real Heatmap Generation and Recalculate Logic
+  - [x] E2: Enrich API Responses
+- [ ] Phase F: Frontend Component Build-Out
+  - [ ] F1: Build 8 Stub Components
+  - [ ] F2: Zustand Store Enhancements
+  - [ ] F3: WebSocket Hook Enhancement
+- [ ] Phase G: Unit Tests
+  - [ ] G1: Write logic tests
+- [ ] Phase H: Infrastructure & Polish
+  - [ ] H1: Config Expansion
+  - [ ] H2: Structured Logging
+  - [ ] H3: Error Response Standardization
+  - [ ] H4: Real PDF Export
+  - [ ] H5: Seed Archive Script

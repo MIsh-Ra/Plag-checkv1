@@ -46,7 +46,7 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
+Alethian_documents/
 # Celery
 celerybeat-schedule
 celerybeat.pid

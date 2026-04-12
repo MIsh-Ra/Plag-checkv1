@@ -1,0 +1,569 @@
+# Alethian v2 — Remediation Implementation Plan
+
+**Based on:** [audit_report.md](file:///home/akshit/.gemini/antigravity/brain/9ca65070-1f67-4b69-a6ac-d33499ca997a/audit_report.md)
+
+---
+
+## Phase A (P0): Critical Wiring Fixes
+
+> [!CAUTION]
+> These must be done first — the app is non-functional without them.
+
+---
+
+### A1. Register Missing Routers in [main.py](file:///home/akshit/Projects/Plag-checkv1/backup/main.py)
+
+#### [MODIFY] [main.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/main.py)
+
+- Import `reports` router from `app.api.reports`
+- Register it at prefix `/api/v1/reports`
+- Import and register future `auth` and `admin` routers (placeholder comments for now)
+
+```python
+from app.api import documents, reports
+
+app.include_router(documents.router, prefix="/api/v1/documents", tags=["documents"])
+app.include_router(reports.router, prefix="/api/v1/reports", tags=["reports"])
+```
+
+---
+
+### A2. Implement Real [run_similarity()](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#68-79)
+
+#### [MODIFY] [similarity.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py)
+
+**[RedisLSHIndex](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#10-24)** — Implement using `datasketch.MinHashLSH`:
+- [index_signature(chunk_id, doc_id, minhash)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#16-20) → Insert into LSH index stored in Redis
+- [query_similar(minhash, threshold=0.5)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#21-24) → Return list of [(chunk_id, doc_id)](file:///home/akshit/Projects/Plag-checkv1/Alethian/scripts/ingest_archive.py#168-176) candidates
+
+**[run_similarity(document_id, text, db_session)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#68-79)** — Full implementation:
+1. Call [process_text_into_chunks(text)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/shingling.py#46-57) to get chunks with minhash + embeddings
+2. For each chunk:
+   a. Query `RedisLSHIndex.query_similar()` with Jaccard threshold 0.5 (FR-2.2)
+   b. Query `QdrantManager.search_similar()` with cosine threshold 0.85 (FR-2.4)
+   c. Exclude self-matches (same `document_id`)
+3. For matched pairs, call [paragraph_align()](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#63-67) to get exact char offsets
+4. Build match dicts with: `type` (exact if jaccard>0.9, paraphrase otherwise), `submitted_text`, `source_text`, `submitted_page`, `source_page`, `submitted_start_char`, `submitted_end_char`, `similarity_score`, `source_document_id`
+5. Return list of match dicts
+
+**[paragraph_align(doc1_chunks, doc2_chunks)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/similarity.py#63-67)** — Implement:
+- Use difflib.SequenceMatcher for word-level alignment
+- Return list of aligned segment pairs with char offsets
+
+---
+
+### A3. Wire Celery Worker to Persist All Records
+
+#### [MODIFY] [celery_worker.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/celery_worker.py)
+
+Replace dummy text with real Grobid extraction. Full pipeline:
+
+```python
+@celery_app.task(bind=True, name="analyze_document")
+def analyze_document(self, document_id, file_path):
+    db = SessionLocal()
+    try:
+        doc = db.query(Document).filter(...).first()
+        doc.status = DocumentStatus.processing
+        db.commit()
+
+        # 1. INGESTION — Extract text via Grobid
+        from app.core.ingestion import GrobidClient
+        grobid = GrobidClient()
+        with open(file_path, "rb") as f:
+            processed = grobid.process_pdf(f.read())
+        text = processed.get("body_text", "")
+        doc.title = processed.get("title", doc.title)
+        doc.author = processed.get("authors", doc.author)
+        doc.meta_data = processed
+        doc.page_count = processed.get("page_count", 0)
+        db.commit()
+
+        # 2. INTERNAL SIMILARITY
+        internal_matches = run_similarity(document_id, text, db)
+
+        # 3. WEB DRAGNET
+        web_matches = run_dragnet(document_id, text, internal_matches)
+
+        # 4. PERSIST SOURCES
+        source_map = {}
+        for m in internal_matches + web_matches:
+            key = m.get("source_document_id") or m.get("url")
+            if key not in source_map:
+                src = Source(
+                    type=m.get("type", "web"),
+                    url=m.get("url"),
+                    title=m.get("source_title"),
+                    domain=m.get("domain"),
+                    document_id=m.get("source_document_id"),
+                )
+                db.add(src)
+                db.flush()
+                source_map[key] = src.id
+
+        # 5. PERSIST MATCHES
+        for m in internal_matches + web_matches:
+            key = m.get("source_document_id") or m.get("url")
+            match_record = Match(
+                report_id=report.id,
+                source_id=source_map.get(key),
+                type=m["type"],
+                submitted_text=m["submitted_text"],
+                source_text=m["source_text"],
+                submitted_page=m.get("submitted_page"),
+                source_page=m.get("source_page"),
+                submitted_start_char=m.get("submitted_start_char"),
+                submitted_end_char=m.get("submitted_end_char"),
+                similarity=m["similarity_score"],
+                match_length_words=len(m["submitted_text"].split()),
+            )
+            db.add(match_record)
+
+        # 6. GENERATE REPORT + HEATMAP
+        all_matches = internal_matches + web_matches
+        score = calculate_originality(all_matches, len(text.split()))
+        risk = "high" if score < 50 else ("moderate" if score < 80 else "low")
+
+        report = Report(document_id=doc.id, score=score, risk_level=risk)
+        db.add(report)
+        db.flush()
+
+        heatmap = generate_heatmap(all_matches, doc.page_count)
+        for h in heatmap:
+            hp = HeatmapPage(report_id=report.id, **h)
+            db.add(hp)
+
+        # 7. INDEX for future comparisons (FR-2.6)
+        index_document(document_id, text)
+
+        doc.status = DocumentStatus.complete
+        db.commit()
+    except Exception as e:
+        ...  # set failed, raise
+    finally:
+        db.close()
+```
+
+---
+
+## Phase B (P1): Data Model Enrichment
+
+---
+
+### B1. Extend All DB Models
+
+#### [MODIFY] [models.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py)
+
+**[Document](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py#31-51)** — Add:
+```python
+page_count = Column(Integer, nullable=True)
+risk_level = Column(String, nullable=True)          # "high"/"moderate"/"low"
+originality_score = Column(Float, nullable=True)
+```
+
+**[Report](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py#52-62)** — Add:
+```python
+risk_level = Column(String, nullable=True)
+status = Column(String, default="unreviewed")        # "unreviewed" / "reviewed"
+reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)
+reviewed_at = Column(DateTime, nullable=True)
+faculty_notes = Column(String, nullable=True)
+verdict = Column(String, nullable=True)
+processing_time_seconds = Column(Integer, nullable=True)
+digital_signature = Column(String, nullable=True)
+```
+
+**[Match](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py#70-83)** — Add:
+```python
+type = Column(String, nullable=True)                 # "internal_exact"/"internal_paraphrase"/"web"
+submitted_page = Column(Integer, nullable=True)
+source_page = Column(Integer, nullable=True)
+submitted_start_char = Column(Integer, nullable=True)
+submitted_end_char = Column(Integer, nullable=True)
+match_length_words = Column(Integer, nullable=True)
+exclude_reason = Column(String, nullable=True)
+color_code = Column(String, nullable=True)           # "#ef4444"/"#f97316"/"#3b82f6"
+```
+
+**[Source](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py#63-69)** — Add:
+```python
+type = Column(String, nullable=True)                 # "internal"/"web"
+domain = Column(String, nullable=True)
+document_id = Column(String, ForeignKey("documents.id"), nullable=True)
+coverage_percent = Column(Float, nullable=True)
+match_count = Column(Integer, nullable=True)
+pages_affected = Column(JSON, nullable=True)         # [2, 5, 12]
+is_coherent_source = Column(Boolean, default=False)
+```
+
+**[HeatmapPage](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py#84-93)** — Add:
+```python
+internal_density = Column(Float, nullable=True)
+web_density = Column(Float, nullable=True)
+color = Column(String, nullable=True)                # hex color from gradient
+match_count = Column(Integer, nullable=True)
+dominant_type = Column(String, nullable=True)
+```
+
+---
+
+### B2. Update All Pydantic Schemas
+
+#### [MODIFY] [schemas/document.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/document.py)
+
+- Add `page_count`, `risk_level`, `originality_score`, [metadata](file:///home/akshit/Projects/Plag-checkv1/Alethian/scripts/ingest_archive.py#31-42) to [DocumentResponse](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/document.py#14-23)
+- Add `DocumentDetailResponse` with full metadata (abstract, sections)
+- Add `DocumentListResponse` wrapper: `total: int`, `items: List[DocumentResponse]`
+
+#### [MODIFY] [schemas/report.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/report.py)
+
+- Add `risk_level`, `status` to [ReportResponse](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/report.py#17-25)
+- Add `SummaryStats` schema (total_matches, internal_exact, internal_paraphrase, web_matches, unique_sources, avg_match_length_words, longest_match_words, pages_with_matches)
+- Add [SourceResponse](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/match.py#9-12) in report context with type, coverage_percent, pages_affected
+- Add `ReviewInfo` schema (status, reviewed_by, reviewed_at, faculty_notes, verdict)
+- Add `PageDistribution` schema
+- Compose `FullReportResponse` matching Report_Design_v2.md JSON structure
+
+#### [MODIFY] [schemas/match.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/match.py)
+
+- Add `type`, `submitted_page`, `source_page`, `submitted_start_char`, `submitted_end_char`, `match_length_words`, `exclude_reason`, `color_code` to [MatchResponse](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/match.py#26-32)
+- Add `reason` field to [MatchExcludeRequest](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/match.py#20-22)
+
+#### [MODIFY] [schemas/admin.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/schemas/admin.py)
+
+- Add `SimilarityThresholds` sub-model (minhash_jaccard, semantic_cosine, web_match)
+- Add `WebDragnetConfig` sub-model (enabled, queries_per_document, rate_limit_rpm)
+- Add `ApiStatus` and `ArchiveStats` sub-models
+- Compose `AdminConfigResponse` matching API_Spec_v2.md
+
+---
+
+## Phase C (P1): Authentication & Security
+
+---
+
+### C1. Create Auth Module
+
+#### [NEW] `backend/app/api/auth.py`
+
+Implement:
+- `POST /auth/login` — Accept username+password, verify against [User](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/db/models.py#21-30) table, return JWT
+- `POST /auth/register` — Create user (admin-only or initial setup)
+- JWT utility functions: `create_access_token()`, `verify_token()`, `get_current_user()` dependency
+
+Dependencies to add to [requirements.txt](file:///home/akshit/Projects/Plag-checkv1/Local-Crawler/requirements.txt): `python-jose[cryptography]`, `passlib[bcrypt]`
+
+#### [MODIFY] [config.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/config.py)
+
+Add settings:
+```python
+JWT_SECRET: str = "change-me-in-production"
+JWT_ALGORITHM: str = "HS256"
+JWT_EXPIRY_MINUTES: int = 60
+SERPER_API_KEY: str = ""
+REDIS_HOST: str = "localhost"
+QDRANT_HOST: str = "localhost"
+```
+
+#### [MODIFY] [main.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/main.py)
+
+Register auth router at `/api/v1/auth`.
+
+---
+
+## Phase D (P2): Admin API
+
+---
+
+#### [NEW] `backend/app/api/admin.py`
+
+Implement:
+- `GET /admin/config` — Return current config (thresholds, dragnet settings, API status, archive stats)
+- `PATCH /admin/config` — Update config values
+- Require admin role (use `get_current_user` + role check dependency)
+
+#### [MODIFY] main.py
+
+Register admin router at `/api/v1/admin`.
+
+---
+
+## Phase E (P1): Complete Report Engine
+
+---
+
+### E1. Real Heatmap Generation
+
+#### [MODIFY] [report_engine.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/report_engine.py)
+
+**[generate_heatmap(matches, page_count)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/report_engine.py#14-24)** — Real implementation:
+1. Group matches by `submitted_page`
+2. For each page 1..page_count:
+   - Count internal matches, web matches
+   - Calculate `match_density` = matched_chars / estimated_page_chars
+   - Calculate `internal_density`, `web_density` separately
+   - Assign `color` from gradient: 0→#22c55e, 0.25→#eab308, 0.5→#f97316, 0.75→#ef4444, 1.0→#dc2626
+   - Determine `dominant_type`
+3. Return list of page dicts
+
+**[recalculate_after_exclusion(report_id, match_id, db)](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/report_engine.py#44-50)** — Real implementation:
+1. Fetch all matches for report
+2. Toggle `is_excluded` on target match
+3. Recalculate [calculate_originality()](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/report_engine.py#4-13) excluding excluded matches
+4. Update report score + risk_level
+5. Return new score
+
+**Add new functions:**
+- `calculate_risk_level(score)` → "high" if <50, "moderate" if <80, "low" if ≥80
+- `build_summary_stats(matches)` → dict matching Report_Design_v2 `summary_stats`
+- `build_page_distribution(matches, page_count)` → per-page internal_exact/paraphrase/web counts
+- `assign_match_colors(matches)` → Set `color_code` per match type
+
+---
+
+### E2. Enrich API Responses
+
+#### [MODIFY] [reports.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/api/reports.py)
+
+- `GET /{document_id}` → Return full `FullReportResponse` with summary_stats, sources, heatmap, page_distribution, review
+- `PATCH /.../matches/{match_id}` → Accept `reason`, return `updated_originality_score`
+- `POST /.../review` → Accept `verdict`, `faculty_notes`, `digital_signature`, save to Report
+- `GET /.../export/json` → Return full report structure matching spec
+- `GET /.../export/pdf` → Return actual PDF binary (use `reportlab` or `weasyprint`)
+
+#### [MODIFY] [documents.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/api/documents.py)
+
+- Add `GET /{id}` detail endpoint returning `DocumentDetailResponse`
+- Add `status` and `course_id` query param filters on list endpoint
+- Return paginated wrapper `{total, items}` instead of flat array
+- Fix WebSocket path to `/documents/{id}/status` (not `/ws/{client_id}`)
+- Implement real WS progress push (stage, progress %, message, timestamp)
+
+---
+
+## Phase F (P1): Frontend Component Build-Out
+
+---
+
+### F1. All 8 Stub Components → Full Implementation
+
+Each component below needs to be rewritten from 1-line stub to a full React component matching [Report_Design_v2.md](file:///home/akshit/Projects/Plag-checkv1/Alethian/Documents_v2/Report_Design_v2.md) specs.
+
+#### [MODIFY] [ScoreHeader.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/ScoreHeader.jsx)
+- Large originality score number, color-coded by risk (red <50, yellow 50-80, green >80)
+- Risk level badge (🔴🟡🟢)
+- Summary stats row: total matches, unique sources, pages affected
+- Internal vs Web breakdown bar (stacked horizontal bar)
+- Action buttons row: Export PDF, Export JSON, Print, Mark Reviewed
+
+#### [MODIFY] [Heatmap.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/Heatmap.jsx)
+- Horizontal strip of small rectangles (one per page)
+- Each colored by `match_density` using the 5-step gradient
+- Tooltip on hover: "Page X: Y% density (N internal, M web)"
+- Click navigates to that page in TextOverlay
+- Toggle: All / Internal Only / Web Only
+
+#### [MODIFY] [DiffViewer.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/DiffViewer.jsx)
+- Two-panel layout (submitted left, source right)
+- Highlighted matching segments in both panels
+- Word-level diff highlighting (green=same, red=changed)
+- Similarity score badge
+- Source metadata bar (doc name + page for internal, URL + domain for web)
+
+#### [MODIFY] [TextOverlay.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/TextOverlay.jsx)
+- Render full document text page-by-page
+- Inline `<span>` highlights with colors per match type:
+  - Red `#ef4444` = internal exact
+  - Orange `#f97316` = internal paraphrase
+  - Blue `#3b82f6` = web match
+  - Gray `#9ca3af` + strikethrough = excluded
+- Click a highlight → select in MatchCard list + load in DiffViewer
+- Page indicator synced with Heatmap
+
+#### [MODIFY] [SourcePanel.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/SourcePanel.jsx)
+- Sortable table: rank, type icon (📄/🌐), source name, coverage %, match count
+- Coverage bar (percentage fill) for each source
+- Click a source → filter TextOverlay to show only that source's matches
+- "Coherent Source" badge for domains with ≥3 matches
+
+#### [MODIFY] [FilterBar.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/FilterBar.jsx)
+- Checkbox toggles with counts:
+  - [x] All (N)
+  - [ ] Internal Exact (N)
+  - [ ] Internal Paraphrase (N)
+  - [ ] Web Match (N)
+  - [ ] Excluded (N)
+- Wired to Zustand store `filters` state
+
+#### [MODIFY] [MatchCard.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/MatchCard.jsx)
+- Match type badge + color indicator stripe
+- Submitted text excerpt (≤100 words, "…" truncation)
+- Source text excerpt
+- Page number + similarity score
+- "Exclude Match" button (dropdown for reason) + "Add Comment" button
+- Excluded state: dimmed opacity, strikethrough, "Restore" button
+- Wired to Zustand store [updateMatchExclusion](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/stores/reportStore.js#10-17)
+
+#### [MODIFY] [ExportMenu.jsx](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/components/report/ExportMenu.jsx)
+- Three buttons: Export PDF, Export JSON, Print
+- PDF calls `GET /reports/{id}/export/pdf` and triggers download
+- JSON calls `GET /reports/{id}/export/json` and triggers download
+- Print calls `window.print()`
+
+---
+
+### F2. Zustand Store Enhancements
+
+#### [MODIFY] [reportStore.js](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/stores/reportStore.js)
+
+Add:
+- `selectedMatchId` — currently selected match for DiffViewer
+- `selectedSourceId` — currently selected source filter
+- `filterTypes` — { internal_exact: true, internal_paraphrase: true, web: true, excluded: false }
+- `currentPage` — synced between Heatmap and TextOverlay
+- `setSelectedMatch(id)`, `setSelectedSource(id)`, `setCurrentPage(n)`, `toggleFilterType(type)`
+- Computed getter: `filteredMatches` — applies filterTypes + source filter
+
+---
+
+### F3. WebSocket Hook Enhancement
+
+#### [MODIFY] [useWebSocket.js](file:///home/akshit/Projects/Plag-checkv1/Alethian/frontend/src/hooks/useWebSocket.js)
+
+- Parse incoming messages as JSON: `{ stage, progress, message, timestamp }`
+- Expose `{ status, stage, progress, message }` from the hook
+- Auto-reconnect on disconnect with exponential backoff
+
+---
+
+## Phase G (P3): Unit Tests
+
+---
+
+#### [NEW] `tests/unit/test_similarity.py`
+
+Test cases:
+- `test_create_sliding_windows` — verify 3-sentence windows
+- `test_generate_minhash` — verify 128 permutations
+- `test_generate_embedding` — verify 384-dim vector
+- `test_qdrant_add_and_search` — integration test with Qdrant
+- `test_run_similarity_finds_exact_match` — end-to-end
+- `test_run_similarity_no_self_match` — exclude same document
+
+#### [NEW] `tests/unit/test_web_dragnet.py`
+
+Test cases:
+- `test_select_suspicious_chunks_filters_short` — <30 words skipped
+- `test_select_suspicious_chunks_filters_diverse` — >0.7 unique ratio skipped
+- `test_select_suspicious_chunks_respects_limit` — max_queries honored
+- `test_serper_client_caching` — same query returns cached result
+- `test_serper_client_duckduckgo_fallback` — mock serper failure
+- `test_analyze_coherence` — ≥3 from same domain flagged
+
+#### [NEW] `tests/unit/test_report_engine.py`
+
+Test cases:
+- `test_calculate_originality_no_matches` → 100.0
+- `test_calculate_originality_full_match` → ~0.0
+- `test_calculate_originality_excludes_excluded` — excluded matches not counted
+- `test_generate_heatmap_page_count` — correct number of pages
+- `test_build_source_breakdown` — groups by URL
+- `test_calculate_risk_level` — thresholds correct
+- `test_recalculate_after_exclusion` — score changes after toggle
+
+---
+
+## Phase H (P3): Infrastructure & Polish
+
+---
+
+### H1. Config Expansion
+
+#### [MODIFY] [config.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/core/config.py)
+
+```python
+class Settings(BaseSettings):
+    # Existing
+    POSTGRES_USER: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_DB: str
+    POSTGRES_HOST: str
+    POSTGRES_PORT: str
+    # New
+    JWT_SECRET: str = "change-me"
+    JWT_ALGORITHM: str = "HS256"
+    JWT_EXPIRY_MINUTES: int = 60
+    SERPER_API_KEY: str = ""
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    QDRANT_HOST: str = "localhost"
+    QDRANT_PORT: int = 6333
+    GROBID_URL: str = "http://localhost:8070"
+    MAX_UPLOAD_SIZE_MB: int = 100
+    MAX_DRAGNET_QUERIES: int = 20
+    DRAGNET_RATE_LIMIT_RPM: int = 60
+```
+
+### H2. Structured Logging
+
+#### [NEW] `backend/app/core/logging.py`
+
+- Configure `structlog` or `python-json-logger`
+- JSON format: `{timestamp, level, message, job_id, stage, ...}`
+- Attach `job_id` to all log entries within [analyze_document](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/celery_worker.py#21-73) task
+
+Add `python-json-logger` to [requirements.txt](file:///home/akshit/Projects/Plag-checkv1/Local-Crawler/requirements.txt).
+
+### H3. Error Response Standardization
+
+#### [NEW] `backend/app/core/exceptions.py`
+
+```python
+class AlethianException(HTTPException):
+    def __init__(self, status_code, detail, error_code):
+        super().__init__(status_code=status_code, detail=detail)
+        self.error_code = error_code
+
+# Register exception handler in main.py to return:
+# {"detail": "...", "error_code": "...", "timestamp": "..."}
+```
+
+### H4. PDF Export (Real)
+
+Add `weasyprint` or `reportlab` to [requirements.txt](file:///home/akshit/Projects/Plag-checkv1/Local-Crawler/requirements.txt).
+
+#### [MODIFY] [backend/app/api/reports.py](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/api/reports.py) — [export_pdf()](file:///home/akshit/Projects/Plag-checkv1/Alethian/backend/app/api/reports.py#63-67)
+
+Generate actual PDF with:
+- Page 1: Cover (title, author, score, risk, summary stats)
+- Page 2: Charts (pie + bar rendered as images via matplotlib)
+- Pages 3+: Match details (2-3 per page)
+- Last page: Footer with timestamp + hash
+
+### H5. Missing Script
+
+#### [NEW] `scripts/seed_archive.py`
+
+- Inserts 10-20 sample documents with dummy text into Postgres + Qdrant + Redis
+- Used for local development and demo
+
+---
+
+## Verification Plan
+
+### Automated
+```bash
+cd Alethian && python -m pytest tests/unit/ -v
+cd Alethian && python -m pytest tests/system/ -v
+```
+
+### Manual
+1. Register a user → Login → Get JWT token
+2. Upload a PDF → Verify Celery picks it up → Check WS progress
+3. Verify Report contains: score, risk, matches with types/pages, heatmap, sources
+4. Exclude a match → Verify score recalculates
+5. Export PDF → Verify cover page, charts, match details
+6. Export JSON → Verify matches full Report Design spec structure
+7. Admin: GET/PATCH config → Verify threshold changes apply
+8. Frontend: Verify all 10 components render with real data
+9. Frontend: Verify filter toggles, match selection, diff viewer, heatmap click-to-scroll

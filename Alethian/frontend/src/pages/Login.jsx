@@ -20,7 +20,12 @@ export default function Login() {
             console.log("Login Success:", response);
             // In a real app, store token in localStorage/Context
             localStorage.setItem('alethian_token', response.access_token);
-            localStorage.setItem('alethian_user', JSON.stringify(response.user));
+            localStorage.setItem('alethian_user', JSON.stringify({
+                name: email.split('@')[0],
+                email: email,
+                role: response.role,
+                user_id: response.user_id
+            }));
 
             if (response.role === 'admin') {
                 navigate('/admin');
