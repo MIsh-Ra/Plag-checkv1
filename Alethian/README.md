@@ -4,7 +4,6 @@
   <strong>Enterprise-grade plagiarism detection for academic institutions</strong><br>
   Internal similarity analysis · Web dragnet scanning · Rich originality reports
 </p>
-
 ---
 
 ## Overview
