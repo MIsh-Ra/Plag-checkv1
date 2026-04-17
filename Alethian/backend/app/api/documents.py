@@ -5,6 +5,12 @@ import uuid
 import datetime
 import json
 import os
+import sys
+import re
+import tempfile
+import logging
+
+logger = logging.getLogger(__name__)
 
 from app.db.session import get_db
 from app.db.models import Document, DocumentStatus
@@ -64,9 +70,8 @@ async def upload_document(
         if hasattr(settings, 'MAX_UPLOAD_SIZE_MB') and size_mb > getattr(settings, 'MAX_UPLOAD_SIZE_MB', 100):
             raise HTTPException(status_code=413, detail=f"File too large: {size_mb:.1f}MB")
 
-        import re
         safe_name = re.sub(r'[^\w\-.]', '_', file.filename.split('/')[-1].split('\\')[-1])
-        file_path = f"/tmp/{uuid.uuid4()}_{safe_name}"
+        file_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{safe_name}")
         with open(file_path, "wb") as f:
             f.write(content)
             
@@ -87,18 +92,17 @@ async def upload_document(
         db.refresh(new_doc)
         
         # Run in Celery Worker
-        import sys
-        import os
         sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../../')))
         try:
             from celery_worker import analyze_document
             analyze_document.delay(new_doc.id, file_path)
         except Exception as e:
-            print("Failed to dispatch celery task:", e)
+            logger.warning(f"Failed to dispatch celery task: {e}")
         
         return new_doc
             
     except Exception as e:
+        logger.exception("Upload handler error")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
 

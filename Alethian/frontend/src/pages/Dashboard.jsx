@@ -55,10 +55,18 @@ export default function Dashboard() {
     };
 
     const getStatusBadge = (status, score) => {
-        if (status === 'processing') {
+        const processingStatuses = ['pending', 'ingesting', 'analyzing', 'processing'];
+        if (processingStatuses.includes(status)) {
             return (
                 <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     <Loader2 className="w-3 h-3 mr-1 animate-spin" /> Ingesting
+                </span>
+            );
+        }
+        if (status === 'error' || status === 'failed') {
+            return (
+                <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                    <AlertTriangle className="w-3 h-3 mr-1" /> Failed
                 </span>
             );
         }
@@ -70,9 +78,10 @@ export default function Dashboard() {
             );
         }
         // Complete (score is originality score, lower is worse)
-        if (score < 50) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">High Risk ({score}%)</span>;
-        if (score < 80) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium Risk ({score}%)</span>;
-        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Clean ({score}%)</span>;
+        const displayScore = score || 0;
+        if (displayScore < 50) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">High Risk ({displayScore}%)</span>;
+        if (displayScore < 80) return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">Medium Risk ({displayScore}%)</span>;
+        return <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">Clean ({displayScore}%)</span>;
     };
 
     return (
@@ -153,8 +162,8 @@ export default function Dashboard() {
                                                 <FileText className="w-10 h-10 text-gray-400" />
                                             </div>
                                             <div className="ml-4">
-                                                <div className="text-sm font-medium text-gray-900">{doc.title}</div>
-                                                <div className="text-sm text-gray-500">Author: {doc.author} • Uploaded: {new Date(doc.upload_date).toLocaleDateString()}</div>
+                                                <div className="text-sm font-medium text-gray-900">{doc.filename || doc.title || 'Unknown Document'}</div>
+                                                <div className="text-sm text-gray-500">Author: {doc.author || 'Unknown'} • Uploaded: {new Date(doc.upload_date).toLocaleDateString()}</div>
                                             </div>
                                         </div>
                                         <div className="flex items-center space-x-6">
@@ -166,7 +175,7 @@ export default function Dashboard() {
                                             </button>
                                         </div>
                                     </div>
-                                    {doc.status === 'processing' && (
+                                    {['pending', 'ingesting', 'analyzing', 'processing'].includes(doc.status) && (
                                         <div className="px-6 pb-2">
                                             <div className="w-full bg-gray-200 rounded-full h-1.5">
                                                 <div className="bg-blue-600 h-1.5 rounded-full animate-pulse" style={{ width: doc.status === 'processing' ? '60%' : '30%' }}></div>

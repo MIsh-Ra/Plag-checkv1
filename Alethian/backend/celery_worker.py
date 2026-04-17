@@ -21,12 +21,20 @@ celery_app.conf.update(
 )
 
 def _fallback_extract(file_path: str) -> str:
-    """Emergency fallback if Grobid is unreachable."""
+    """Emergency fallback using pypdf if Grobid fails or is unreachable."""
     try:
-        import subprocess
-        result = subprocess.run(["pdftotext", file_path, "-"], capture_output=True, text=True, timeout=30)
-        return result.stdout
-    except Exception:
+        import pypdf
+        text = []
+        with open(file_path, "rb") as f:
+            reader = pypdf.PdfReader(f)
+            for page in reader.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text.append(extracted)
+        return "\n\n".join(text)
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f"Fallback extraction failed: {e}")
         return ""
 
 @celery_app.task(bind=True, name="analyze_document")
@@ -92,18 +100,22 @@ def analyze_document(self, document_id: str, file_path: str):
             page_count = parsed.get("page_count", 1) or 1
             doc.title = str(parsed.get("title", doc.title))[:250] # Limit size safely
             doc.page_count = page_count
-            # doc.meta_data = {
-            #     "abstract": parsed.get("abstract", ""),
-            #     "sections": [s["heading"] for s in parsed.get("sections", [])]
-            # } 
+            
+            if not text or len(text.strip()) < 50:
+                raise ValueError("Grobid extracted very little or no text. Likely a non-standard layout.")
         except Exception as e:
-            logger.warning(f"[{document_id}] Grobid failed, falling back to raw text extraction: {e}")
+            logger.warning(f"[{document_id}] Grobid failed or returned empty text, falling back to raw text extraction: {e}")
             text = _fallback_extract(file_path)
             page_count = max(1, len(text) // 3000)
             doc.page_count = page_count
         
         doc.content = text
         db.commit()
+
+        # --- Stage 1.5: Index for future comparisons (moved before similarity) ---
+        logger.info(f"[{document_id}] Stage: indexing")
+        broadcast_status("indexing", 25, "Indexing document into archive...")
+        index_document(document_id, text, title=doc.title, page_count=doc.page_count or 1)
 
         # --- Stage 2: Internal Similarity ---
         logger.info(f"[{document_id}] Stage: internal_similarity")
@@ -178,8 +190,6 @@ def analyze_document(self, document_id: str, file_path: str):
             )
             db.add(hp)
 
-        # --- Stage 5: Index for future comparisons ---
-        index_document(document_id, text, title=doc.title, page_count=doc.page_count or 1)
 
         doc.status = DocumentStatus.complete
         # Set doc originality metric denormalized mapping properties assuming these fields exist natively

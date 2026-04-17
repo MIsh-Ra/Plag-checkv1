@@ -24,3 +24,4 @@ python-json-logger
 pytest-cov
 pytest-mock
 pytest-asyncio
+pypdf

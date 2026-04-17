@@ -66,7 +66,7 @@ def select_suspicious_chunks(text, internal_matches=None, max_queries=15):
             
         # Filter 3: Vocabulary diversity
         unique_ratio = len(set(words)) / len(words)
-        if unique_ratio > 0.7:
+        if unique_ratio > 0.85:
             # likely original
             continue
             

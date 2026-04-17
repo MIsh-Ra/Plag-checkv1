@@ -31,19 +31,43 @@ def fetch_page_text(url, timeout=10):
         return ""
 
 def compare_snippets(submitted_text, source_text):
-    """Reuses sentence-transformers model from similarity module locally."""
+    """Compare a submitted chunk against the best-matching window in a web page.
+    
+    Splits the source_text into overlapping ~200-word windows and returns the
+    highest cosine similarity found. This prevents score dilution when comparing
+    a small chunk against a large page.
+    """
     if not submitted_text or not source_text or not _model:
         return 0.0
     try:
         if len(source_text) < 20: 
             return 0.0
+        
         emb1 = _model.encode(submitted_text, convert_to_tensor=True)
-        emb2 = _model.encode(source_text, convert_to_tensor=True)
-        score = st_util.cos_sim(emb1, emb2).item()
-        return max(0.0, score)
+        
+        # Split source into overlapping windows for fair comparison
+        source_words = source_text.split()
+        window_size = 200
+        step = 100
+        
+        if len(source_words) <= window_size:
+            # Short page: compare directly
+            emb2 = _model.encode(source_text, convert_to_tensor=True)
+            return max(0.0, st_util.cos_sim(emb1, emb2).item())
+        
+        best_score = 0.0
+        for i in range(0, len(source_words) - window_size + 1, step):
+            window = " ".join(source_words[i:i + window_size])
+            emb2 = _model.encode(window, convert_to_tensor=True)
+            score = st_util.cos_sim(emb1, emb2).item()
+            if score > best_score:
+                best_score = score
+        
+        return max(0.0, best_score)
     except Exception as e:
         logger.error(f"Error comparing snippets: {e}")
         return 0.0
+
 
 def analyze_coherence(matches):
     """Groups matches by domain, flags ≥3 from same domain."""
