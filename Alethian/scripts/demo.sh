@@ -43,7 +43,7 @@ step() { echo -e "\n${BOLD}[$1]${NC} $2"; }
 
 # ── Step 1: Kill stale processes on required ports ─────────────────────────
 cleanup_ports() {
-    step "1/5" "Cleaning up stale processes..."
+    step "1/7" "Cleaning up stale processes..."
 
     for PORT in $FRONTEND_PORT $BACKEND_PORT; do
         PIDS=$(ss -tlnp 2>/dev/null | grep ":${PORT} " | grep -oP 'pid=\K[0-9]+' | sort -u)
@@ -63,7 +63,7 @@ cleanup_ports() {
 
 # ── Step 2: Start Docker infrastructure ────────────────────────────────────
 start_docker() {
-    step "2/5" "Starting Docker infrastructure..."
+    step "2/7" "Starting Docker infrastructure..."
 
     if ! docker info > /dev/null 2>&1; then
         err "Docker is not running! Please start Docker first."
@@ -105,9 +105,69 @@ start_docker() {
     log "All containers are running."
 }
 
-# ── Step 3: Open Backend terminal ──────────────────────────────────────────
+# ── Step 3: Seed demo users ────────────────────────────────────────────────
+seed_demo_users() {
+    step "3/7" "Seeding demo users..."
+
+    cd "$BACKEND_DIR"
+
+    if [ ! -f "venv/bin/activate" ]; then
+        err "venv not found at $BACKEND_DIR/venv. Run: python3 -m venv venv && pip install -r requirements.txt"
+        exit 1
+    fi
+
+    source venv/bin/activate
+
+    echo "  Running seeder..."
+    PYTHONPATH="$BACKEND_DIR" python3 - <<'PYEOF'
+import sys
+try:
+    from app.db.session import SessionLocal, engine
+    from app.db.models import User, UserRole, Base
+    from passlib.context import CryptContext
+
+    Base.metadata.create_all(bind=engine)
+    pwd = CryptContext(schemes=['bcrypt'])
+    db = SessionLocal()
+
+    users = [
+        {'username': 'faculty@university.edu', 'email': 'faculty@university.edu',
+         'password': '123456', 'full_name': 'Demo Faculty', 'role': UserRole.faculty},
+        {'username': 'admin@university.edu', 'email': 'admin@university.edu',
+         'password': 'admin', 'full_name': 'System Admin', 'role': UserRole.admin},
+    ]
+
+    for u in users:
+        existing = db.query(User).filter(User.email == u['email']).first()
+        if not existing:
+            db.add(User(
+                username=u['username'], email=u['email'],
+                hashed_password=pwd.hash(u['password']),
+                full_name=u['full_name'], role=u['role']
+            ))
+            print(f"  ✅ Created: {u['email']} (password: {u['password']})")
+        else:
+            print(f"  ℹ️  Exists:  {u['email']} (skipped)")
+
+    db.commit()
+    db.close()
+    print("  Demo users ready.")
+except Exception as e:
+    print(f"  ❌ Seeding failed: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+
+    if [ $? -eq 0 ]; then
+        log "Demo users seeded successfully."
+    else
+        err "User seeding FAILED — check the error above. Backend will return 401 until users exist."
+    fi
+}
+
+
+# ── Step 4: Open Backend terminal ──────────────────────────────────────────
 start_backend() {
-    step "3/5" "Starting FastAPI Backend..."
+    step "4/7" "Starting FastAPI Backend..."
 
     kitty --title "🔧 Alethian Backend (port $BACKEND_PORT)" \
           --detach \
@@ -139,9 +199,35 @@ start_backend() {
     done
 }
 
-# ── Step 4: Open Frontend terminal ─────────────────────────────────────────
+# ── Step 5: Open Celery Worker terminal ────────────────────────────────────
+start_celery_worker() {
+    step "5/7" "Starting Celery Worker..."
+
+    kitty --title "⚙️  Alethian Celery Worker" \
+          --detach \
+          bash -c "
+            cd '$BACKEND_DIR'
+            source venv/bin/activate
+            echo ''
+            echo '═══════════════════════════════════════════'
+            echo '  Alethian Celery Worker'
+            echo '  Processing pipeline: Grobid → Similarity → Dragnet → Report'
+            echo '═══════════════════════════════════════════'
+            echo ''
+            PYTHONPATH='$BACKEND_DIR' celery -A celery_worker worker --loglevel=info --concurrency=2 2>&1
+            echo ''
+            echo 'Worker stopped. Press Enter to close.'
+            read
+          "
+
+    # Give the worker a moment to connect to Redis
+    sleep 2
+    log "Celery worker is running (check its terminal for task logs)."
+}
+
+# ── Step 6: Open Frontend terminal ─────────────────────────────────────────
 start_frontend() {
-    step "4/5" "Starting Vite Frontend..."
+    step "6/7" "Starting Vite Frontend..."
 
     kitty --title "🌐 Alethian Frontend (port $FRONTEND_PORT)" \
           --detach \
@@ -172,15 +258,15 @@ start_frontend() {
     done
 }
 
-# ── Step 5: Open Grobid Output Monitor ─────────────────────────────────────
+# ── Step 7: Open Pipeline Monitor ──────────────────────────────────────────
 start_monitor() {
-    step "5/5" "Opening Grobid Output Monitor..."
+    step "7/7" "Opening Pipeline Monitor..."
 
-    kitty --title "📄 Grobid Output Monitor" \
+    kitty --title "🔬 Alethian Pipeline Monitor" \
           --detach \
           bash "$MONITOR_SCRIPT"
 
-    log "Monitor is watching for uploads."
+    log "Pipeline monitor is watching for uploads."
 }
 
 # ── Summary ────────────────────────────────────────────────────────────────
@@ -198,9 +284,10 @@ print_summary() {
     echo -e "    Admin:   ${CYAN}admin@university.edu${NC}   / ${CYAN}admin${NC}"
     echo ""
     echo -e "  ${BOLD}Terminal Windows:${NC}"
-    echo "    🔧 Backend   — Shows API request logs"
-    echo "    🌐 Frontend  — Shows Vite dev server"
-    echo "    📄 Monitor   — Shows Grobid parsed output after upload"
+    echo "    🔧 Backend   — API request logs"
+    echo "    ⚙️  Worker    — Celery task logs (raw processing pipeline)"
+    echo "    🌐 Frontend  — Vite dev server"
+    echo "    🔬 Monitor   — Live pipeline status tracker"
     echo ""
     echo -e "${CYAN}${BOLD}═══════════════════════════════════════════════════════${NC}"
     echo ""
@@ -210,7 +297,9 @@ print_summary() {
 banner
 cleanup_ports
 start_docker
+seed_demo_users
 start_backend
+start_celery_worker
 start_frontend
 start_monitor
 print_summary

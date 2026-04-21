@@ -40,7 +40,7 @@ describe('Dashboard Component', () => {
         render(<BrowserRouter><Dashboard /></BrowserRouter>);
 
         await waitFor(() => {
-            expect(screen.getByText('Doc 1')).toBeInTheDocument();
+            expect(screen.getByText('doc1.pdf')).toBeInTheDocument();
         });
     });
 });

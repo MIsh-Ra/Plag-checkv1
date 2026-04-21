@@ -3,7 +3,8 @@ Unit tests for shingling module.
 Uses REAL SentenceTransformer model — no mocks.
 """
 import pytest
-from app.core.shingling import create_sliding_windows, generate_embedding, process_text_into_chunks
+from app.core.shingling import create_sliding_windows, process_text_into_chunks
+from app.core.embeddings import generate_embedding
 
 
 class TestCreateSlidingWindows:

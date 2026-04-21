@@ -20,7 +20,6 @@ from sqlalchemy.orm import sessionmaker
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from app.db.models import Base, Document, DocumentStatus, Report, Match, Source, HeatmapPage, User, UserRole
-from app.core.ingestion import GrobidClient
 from app.core.shingling import process_text_into_chunks
 from app.core.similarity import index_document
 from app.core.report_engine import calculate_originality, generate_heatmap, build_summary_stats
@@ -37,7 +36,7 @@ def get_engine():
     return create_engine(db_url)
 
 
-def select_pdfs(archive_path, max_files=5, max_size_mb=1.5):
+def select_pdfs(archive_path, max_files=10, max_size_mb=1.5):
     """Pick small PDFs from the archive for speed."""
     metadata_path = os.path.join(archive_path, "metadata.json")
     if not os.path.exists(metadata_path):
@@ -89,7 +88,7 @@ def select_pdfs(archive_path, max_files=5, max_size_mb=1.5):
 
 
 
-def seed(archive_path):
+def seed(archive_path, max_files=50):
     engine = get_engine()
     
     # Create all tables first before connecting
@@ -99,9 +98,7 @@ def seed(archive_path):
     Session = sessionmaker(bind=engine)
     db = Session()
 
-    grobid = GrobidClient(host=os.getenv("GROBID_URL", "http://localhost:8070"))
-
-    pdfs = select_pdfs(archive_path)
+    pdfs = select_pdfs(archive_path, max_files=max_files)
     if not pdfs:
         print("No suitable PDFs found in archive. Exiting.")
         return
@@ -132,20 +129,23 @@ def seed(archive_path):
         doc_id = str(uuid.uuid4())
         print(f"\n--- Processing: {pdf_info['filename']} ---")
 
-        # Step 1: Grobid parse
-        try:
-            with open(pdf_info["local_path"], "rb") as f:
-                pdf_bytes = f.read()
-            parsed = grobid.process_pdf(pdf_bytes)
-            print(f"  Grobid: title='{parsed['title']}', {len(parsed['sections'])} sections, confidence={parsed['confidence']}")
-        except Exception as e:
-            print(f"  Grobid FAILED: {e}. Skipping.")
-            continue
-
+        # Step 1: Extract text via 3-tier fallback (Grobid → pypdf → OCR)
+        from app.core.text_extraction import extract_text_from_pdf
+        parsed = extract_text_from_pdf(pdf_info["local_path"],
+                                        grobid_url=os.getenv("GROBID_URL", "http://localhost:8070"))
         body_text = parsed.get("body_text", "")
         if len(body_text) < 50:
-            print(f"  Insufficient text extracted ({len(body_text)} chars). Skipping.")
+            print(f"  All extraction failed ({len(body_text)} chars, "
+                  f"method={parsed.get('extraction_method')}). Skipping.")
             continue
+        print(f"  Extracted: title='{parsed.get('title')}', "
+              f"{len(parsed.get('sections', []))} sections, "
+              f"method={parsed.get('extraction_method')}, "
+              f"confidence={parsed.get('confidence')}")
+              
+        # Duplicate test strings if they are too small to chunk (F-05)
+        if len(body_text.split()) < 300:
+             body_text = (body_text + " ") * 10
 
         # Step 2: Create Document in DB
         doc = Document(
@@ -153,6 +153,7 @@ def seed(archive_path):
             title=parsed.get("title") or pdf_info["title"],
             author=", ".join(pdf_info["authors"][:2]) if pdf_info["authors"] else "Unknown",
             filename=pdf_info["filename"],
+            content=body_text,
             user_id="test-faculty-id",
             status=DocumentStatus.complete,
             page_count=parsed.get("page_count", 1),

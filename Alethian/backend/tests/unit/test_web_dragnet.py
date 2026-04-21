@@ -71,8 +71,10 @@ class TestSerperClient:
 
     def test_cache_prevents_duplicate_requests(self):
         """Verify cache hit returns same results without new API call."""
+        from unittest import mock
         client = SerperClient()
-        client.cache["cached query"] = ["https://cached.com"]
+        client.cache = mock.MagicMock()
+        client.cache.get.return_value = '["https://cached.com"]'
         results = client.search("cached query")
         assert results == ["https://cached.com"]
 

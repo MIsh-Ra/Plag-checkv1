@@ -20,6 +20,11 @@ services:
       - postgres_data:/var/lib/postgresql/data
     networks:
       - alethian_net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-alethian} -d $${POSTGRES_DB:-alethian_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   redis:
     image: redis:7-alpine
@@ -33,6 +38,11 @@ services:
       - redis_data:/data
     networks:
       - alethian_net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
 
   qdrant:
     image: qdrant/qdrant:latest
@@ -46,6 +56,11 @@ services:
       - qdrant_data:/qdrant/storage
     networks:
       - alethian_net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   # -------------------------------------------------------------------------
   # Compute Layer
@@ -60,6 +75,11 @@ services:
       - "8070:8070"
     networks:
       - alethian_net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8070/api/isalive"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
 
 volumes:
   postgres_data:

@@ -8,7 +8,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
 
 from app.core.similarity import QdrantManager, deduplicate, index_document, run_similarity
-from app.core.shingling import generate_embedding
+from app.core.embeddings import generate_embedding
 
 
 # Use a dedicated test collection to avoid polluting production data

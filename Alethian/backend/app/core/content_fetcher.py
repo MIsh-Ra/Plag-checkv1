@@ -5,18 +5,30 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-from sentence_transformers import SentenceTransformer, util as st_util
+from sentence_transformers import util as st_util
+from app.core.embeddings import get_model
 
-# Load model independently — no cross-module dependency
-try:
-    _model = SentenceTransformer('all-MiniLM-L6-v2')
-except Exception:
-    _model = None
-
-def fetch_page_text(url, timeout=10):
-    """Fetches and cleans HTML from a URL, with timeout."""
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+def fetch_page_text(url, timeout=None):
+    """Fetches and cleans HTML from a URL, with robots.txt check and timeout."""
+    from app.core.config import settings
+    if timeout is None:
+        timeout = settings.FETCHER_TIMEOUT
+    headers = {'User-Agent': 'Alethian-Search-Bot/1.0'}
     try:
+        from urllib.robotparser import RobotFileParser
+        
+        parsed_url = urlparse(url)
+        robots_url = f"{parsed_url.scheme}://{parsed_url.netloc}/robots.txt"
+        rp = RobotFileParser()
+        rp.set_url(robots_url)
+        try:
+            rp.read()
+            if not rp.can_fetch(headers['User-Agent'], url):
+                logger.info(f"Blocked by robots.txt: {url}")
+                return ""
+        except Exception as e:
+            pass # Ignore robots parser failure
+
         response = requests.get(url, headers=headers, timeout=timeout)
         if "application/pdf" in response.headers.get('Content-Type', ''):
             return ""
@@ -34,31 +46,44 @@ def compare_snippets(submitted_text, source_text):
     """Compare a submitted chunk against the best-matching window in a web page.
     
     Splits the source_text into overlapping ~200-word windows and returns the
-    highest cosine similarity found. This prevents score dilution when comparing
-    a small chunk against a large page.
+    highest cosine similarity found via batch embedding.
     """
-    if not submitted_text or not source_text or not _model:
+    _model = get_model()
+    if not submitted_text or not source_text or _model is None:
         return 0.0
     try:
-        if len(source_text) < 20: 
-            return 0.0
-        
+        from app.core.config import settings
+        from app.core.embeddings import generate_embeddings_batch
         emb1 = _model.encode(submitted_text, convert_to_tensor=True)
+        
+        if len(source_text) < settings.MIN_SOURCE_TEXT_LENGTH: 
+            return 0.0
         
         # Split source into overlapping windows for fair comparison
         source_words = source_text.split()
-        window_size = 200
-        step = 100
+        window_size = settings.FETCHER_WINDOW_SIZE
+        step = settings.FETCHER_WINDOW_STEP
         
         if len(source_words) <= window_size:
             # Short page: compare directly
             emb2 = _model.encode(source_text, convert_to_tensor=True)
             return max(0.0, st_util.cos_sim(emb1, emb2).item())
         
-        best_score = 0.0
+        windows = []
         for i in range(0, len(source_words) - window_size + 1, step):
             window = " ".join(source_words[i:i + window_size])
-            emb2 = _model.encode(window, convert_to_tensor=True)
+            windows.append(window)
+
+        if not windows:
+             return 0.0
+             
+        batch_embs = generate_embeddings_batch(windows)
+        
+        best_score = 0.0
+        for emb2_list in batch_embs:
+            # convert back to tensor for cosine similarity
+            import torch
+            emb2 = torch.tensor(emb2_list)
             score = st_util.cos_sim(emb1, emb2).item()
             if score > best_score:
                 best_score = score

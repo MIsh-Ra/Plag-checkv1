@@ -1,76 +1,213 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Public+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
+    --background: #f7f9fb;
+    --surface: #f7f9fb;
+    --surface-dim: #d8dadc;
+    --surface-bright: #ffffff;
+    --surface-container-lowest: #ffffff;
+    --surface-container-low: #f2f4f6;
+    --surface-container: #eceef0;
+    --surface-container-high: #e6e8ea;
+    --surface-container-highest: #e0e3e5;
+    
+    --on-background: #191c1e;
+    --on-surface: #191c1e;
+    --on-surface-variant: #45474c;
+    --surface-variant: #e1e2e8;
 
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
- 
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
- 
-    --primary: 222.2 47.4% 11.2%;
-    --primary-foreground: 210 40% 98%;
- 
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
- 
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
- 
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
- 
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
+    --primary: #091426;
+    --primary-container: #1e293b;
+    --primary-fixed: #d8e3fb;
+    --primary-fixed-dim: #bcc7de;
+    --on-primary: #ffffff;
+    --on-primary-container: #8590a6;
+    --on-primary-fixed: #111c2d;
+    --on-primary-fixed-variant: #3c475a;
 
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 222.2 84% 4.9%;
- 
-    --radius: 0.5rem;
+    --secondary: #0058be;
+    --secondary-container: #2170e4;
+    --secondary-fixed: #d8e2ff;
+    --secondary-fixed-dim: #adc6ff;
+    --on-secondary: #ffffff;
+    --on-secondary-container: #fefcff;
+    --on-secondary-fixed: #001a42;
+    --on-secondary-fixed-variant: #004395;
+
+    --tertiary: #330002;
+    --tertiary-container: #5a0008;
+    --tertiary-fixed: #ffdad7;
+    --tertiary-fixed-dim: #ffb3ad;
+    --on-tertiary: #ffffff;
+    --on-tertiary-container: #ff5250;
+    --on-tertiary-fixed: #410004;
+    --on-tertiary-fixed-variant: #930013;
+
+    --error: #ba1a1a;
+    --error-container: #ffdad6;
+    --on-error: #ffffff;
+    --on-error-container: #93000a;
+
+    --outline: #75777d;
+    --outline-variant: #c5c6cd;
+
+    --inverse-surface: #2d3133;
+    --inverse-on-surface: #eff1f3;
+    --inverse-primary: #bcc7de;
   }
  
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
- 
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
- 
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
- 
-    --primary: 210 40% 98%;
-    --primary-foreground: 222.2 47.4% 11.2%;
- 
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
- 
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
- 
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
- 
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
- 
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 212.7 26.8% 83.9%;
+    /* True Dark Mapping (Forensic Monolith) */
+    --background: #0e0e0e;
+    --surface: #131313;
+    --surface-dim: #131313;
+    --surface-bright: #393939;
+    --surface-container-lowest: #0e0e0e;
+    --surface-container-low: #1b1b1b;
+    --surface-container: #1f1f1f;
+    --surface-container-high: #2a2a2a;
+    --surface-container-highest: #353535;
+
+    --on-background: #e2e2e2;
+    --on-surface: #e2e2e2;
+    --on-surface-variant: #c6c6c6;
+    --surface-variant: #444746;
+
+    --primary: #ffffff;
+    --primary-container: #d4d4d4;
+    --primary-fixed: #5d5f5f;
+    --primary-fixed-dim: #454747;
+    --on-primary: #1a1c1c;
+    --on-primary-container: #000000;
+    --on-primary-fixed: #ffffff;
+    --on-primary-fixed-variant: #e2e2e2;
+
+    --secondary: #c7c6c6;
+    --secondary-container: #464747;
+    --secondary-fixed: #c7c6c6;
+    --secondary-fixed-dim: #ababab;
+    --on-secondary: #1a1c1c;
+    --on-secondary-container: #e3e2e2;
+    --on-secondary-fixed: #1a1c1c;
+    --on-secondary-fixed-variant: #3a3c3c;
+
+    --tertiary: #e3e2e2;
+    --tertiary-container: #919090;
+    --tertiary-fixed: #5e5e5e;
+    --tertiary-fixed-dim: #464747;
+    --on-tertiary: #1b1c1c;
+    --on-tertiary-container: #000000;
+    --on-tertiary-fixed: #ffffff;
+    --on-tertiary-fixed-variant: #e3e2e2;
+
+    --error: #ffb4ab;
+    --error-container: #93000a;
+    --on-error: #690005;
+    --on-error-container: #ffdad6;
+
+    --outline: #919191;
+    --outline-variant: #474747;
+
+    --inverse-surface: #e2e2e2;
+    --inverse-on-surface: #303030;
+    --inverse-primary: #5d5f5f;
   }
 }
  
 @layer base {
   * {
-    @apply border-border;
+    /* Implement The "No-Line" Rule globally. Remove default borders globally except for specific outline cases */
+    border-color: transparent;
+  }
+  .dark * {
+    /* True Dark Monolith enforces strict 0px radius globally */
+    border-radius: 0px !important;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-on-background font-sans;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold;
   }
 }
+
+/* Glassmorphism utility */
+@layer utilities {
+  .glass-panel {
+    @apply bg-surface/70 backdrop-blur-[12px];
+  }
+  .ghost-border {
+    border: 1px solid var(--outline-variant);
+    opacity: 0.85; /* Or handle the border opacity differently */
+  }
+  
+  /* Fallback alpha hex for ghost border */
+  .border-ghost {
+    border: 1px solid transparent;
+  }
+  :root .border-ghost {
+    border-color: #c5c6cd26; /* 15% opacity hex for outline-variant */
+  }
+  .dark .border-ghost {
+    border-color: #47474726; /* Monolith outline-variant at 15% opacity */
+  }
+  .gradient-btn-primary {
+    @apply bg-gradient-to-r from-primary to-primary-container text-on-primary hover:-translate-y-[1px] hover:shadow-ambient transition-all rounded-md px-4 py-2 font-medium;
+  }
+}
+
+/* ── Print styles (FR-4.15) ─────────────────────────────────────────────── */
+@media print {
+  /* Hide all chrome: sidebars, header actions, export menu */
+  header button,
+  aside,
+  #export-pdf-btn,
+  #export-json-btn,
+  #print-btn,
+  .no-print {
+    display: none !important;
+  }
+
+  /* Make the document viewer fill the page */
+  body, html {
+    background: #fff !important;
+    color: #000 !important;
+    font-size: 11pt !important;
+  }
+
+  main {
+    width: 100% !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: #fff !important;
+    overflow: visible !important;
+  }
+
+  /* Each document page becomes a print page */
+  [id^="page-"] {
+    page-break-before: always;
+    box-shadow: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 15mm 20mm !important;
+    border: none !important;
+    min-height: unset !important;
+  }
+
+  [id^="page-"]:first-of-type {
+    page-break-before: avoid;
+  }
+
+  /* Preserve highlight colours in print */
+  mark {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+

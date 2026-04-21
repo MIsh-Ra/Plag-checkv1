@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000/api/v1';
+const API_URL = import.meta.env.VITE_API_URL;
 
 const api = axios.create({ baseURL: API_URL });
 
@@ -64,13 +64,7 @@ const Client = {
         },
         exportPdf: async (documentId) => {
             const response = await api.get(`/reports/${documentId}/export/pdf`, { responseType: 'blob' });
-            // Trigger browser download
-            const url = window.URL.createObjectURL(new Blob([response.data]));
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `report_${documentId}.pdf`;
-            a.click();
-            window.URL.revokeObjectURL(url);
+            return response.data; // returns Blob — caller handles download
         },
         exportJson: async (documentId) => {
             const response = await api.get(`/reports/${documentId}/export/json`);

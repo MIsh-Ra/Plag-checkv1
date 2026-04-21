@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Client from '../api/client';
 
 export function useReport(id) {
@@ -6,29 +6,33 @@ export function useReport(id) {
     const [documentData, setDocumentData] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    useEffect(() => {
+    const fetchData = useCallback(async (abortSignal) => {
         if (!id) return;
+        setLoading(true);
+        try {
+            const doc = await Client.documents.get(id);
+            if (abortSignal?.aborted) return;
+            setDocumentData(doc);
 
-        const fetchData = async () => {
-            try {
-                // Fetch document status first
-                const doc = await Client.documents.get(id);
-                setDocumentData(doc);
-
-                // If document is complete or ready, try to fetch the report
-                if (doc.status === 'complete' || doc.status === 'ready') {
-                    const data = await Client.reports.get(id);
-                    setReport(data);
-                }
-            } catch (err) {
-                console.error("Error fetching report or document:", err);
-            } finally {
-                setLoading(false);
+            if (doc.status === 'complete' || doc.status === 'ready') {
+                const data = await Client.reports.get(id);
+                if (abortSignal?.aborted) return;
+                setReport(data);
             }
-        };
-
-        fetchData();
+        } catch (err) {
+            console.error("Error fetching report or document:", err);
+        } finally {
+            if (!abortSignal?.aborted) setLoading(false);
+        }
     }, [id]);
 
-    return { report, documentData, loading, setReport };
+    useEffect(() => {
+        const controller = new AbortController();
+        fetchData(controller.signal);
+        return () => controller.abort();
+    }, [fetchData]);
+
+    const refetch = () => fetchData();
+
+    return { report, documentData, loading, refetch };
 }

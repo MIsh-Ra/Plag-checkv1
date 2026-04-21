@@ -1,0 +1,18 @@
+# Environment (NEVER commit real credentials)
+.env
+.env.local
+.env.*.local
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+
+# Uploads
+/uploads/
+
+# Test artifacts
+test_pdfs/
+*.coverage
+.pytest_cache/
+*.pdf

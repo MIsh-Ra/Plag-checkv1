@@ -26,10 +26,7 @@ function computeWordDiff(textA, textB) {
     }
 
     // Backtrack to find diff
-    const leftTokens = [];
-    const rightTokens = [];
     let i = m, j = n;
-
     const leftResult = [];
     const rightResult = [];
 
@@ -65,9 +62,9 @@ function DiffTokens({ tokens, addedClass, removedClass }) {
                 if (token.type === 'same') {
                     return <span key={idx}>{token.word} </span>;
                 } else if (token.type === 'removed') {
-                    return <del key={idx} className={removedClass}>{token.word} </del>;
+                    return <del key={idx} className={`${removedClass} border-b border-error/50`}>{token.word} </del>;
                 } else {
-                    return <ins key={idx} className={addedClass}>{token.word} </ins>;
+                    return <ins key={idx} className={`${addedClass} border-b border-primary/50`}>{token.word} </ins>;
                 }
             })}
         </span>
@@ -75,44 +72,44 @@ function DiffTokens({ tokens, addedClass, removedClass }) {
 }
 
 export default function DiffViewer({ match }) {
-    const { selectedMatchId } = useReportStore();
-    
-    // If we use selectedMatchId it would be passed via context, but we can accept `match` property directly here
-    // for fallback since we initially fed `matches[0]` in ReportView.
-    if (!match) return <div className="text-gray-400 text-sm italic">Select a match to view details.</div>;
+    if (!match) return <div className="text-on-surface-variant text-xs font-mono uppercase tracking-widest p-10 text-center">SELECT AN ANOMALY TO INITIATE CROSS-EXAMINATION.</div>;
 
     const isInternal = match.type === 'internal_exact' || match.type === 'internal_paraphrase';
     const { leftTokens, rightTokens } = computeWordDiff(match.submitted_text, match.source_text);
 
     return (
-        <div className="grid grid-cols-2 gap-4">
-            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm flex flex-col">
-                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 font-semibold text-sm text-gray-700">
-                    <span className="text-blue-600 font-bold uppercase text-[10px] tracking-wider block mb-1">Submitted</span>
-                    Page {match.submitted_page}
+        <div className="grid grid-cols-2 gap-px bg-ghost h-full">
+            <div className="bg-surface-container-low flex flex-col min-h-0">
+                <div className="bg-surface-container-high px-4 py-3 border-b border-ghost flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface flex items-center">
+                        <span className="w-1.5 h-1.5 bg-primary mr-2"></span> SUBMITTED EVIDENCE
+                    </span>
+                    <span className="text-[10px] font-mono text-on-surface-variant uppercase">PAGE {match.submitted_page}</span>
                 </div>
-                <div className="p-4 flex-1 overflow-y-auto font-serif text-gray-800 text-sm leading-relaxed bg-red-50">
+                <div className="p-6 flex-1 overflow-y-auto font-document text-sm leading-relaxed text-on-surface">
                     <DiffTokens
                         tokens={leftTokens}
-                        addedClass="bg-green-200 no-underline rounded px-0.5"
-                        removedClass="bg-red-200 rounded px-0.5"
+                        addedClass="bg-primary/5 text-on-surface no-underline"
+                        removedClass="bg-error/10 text-error no-underline"
                     />
                 </div>
             </div>
 
-            <div className="border border-gray-200 rounded-lg overflow-hidden bg-white shadow-sm flex flex-col">
-                <div className="bg-gray-50 px-4 py-2 border-b border-gray-200 font-semibold text-sm text-gray-700">
-                    <span className="text-orange-600 font-bold uppercase text-[10px] tracking-wider mb-1 flex items-center">
-                        {isInternal ? <FileText className="w-3 h-3 mr-1" /> : <Globe className="w-3 h-3 mr-1" />}
-                        {isInternal ? `Archive: ${match.source?.title || 'Unknown Source'}` : `Web: ${match.source?.domain || 'Unknown Domain'}`}
+            <div className="bg-surface-container-low flex flex-col min-h-0 border-l border-ghost">
+                <div className="bg-surface-container-high px-4 py-3 border-b border-ghost flex items-center justify-between">
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-on-surface flex items-center">
+                        {isInternal ? <FileText className="w-3 h-3 mr-2 text-on-surface-variant" /> : <Globe className="w-3 h-3 mr-2 text-on-surface-variant" />}
+                        {isInternal ? `ARCHIVE: ${match.source?.title || 'INTERNAL_REPO'}` : `WEB_DRAGNET: ${match.source?.domain || 'OPEN_INT'}`}
                     </span>
-                    Similarity: {Math.round(match.similarity)}%
+                    <span className="text-[10px] font-mono font-bold text-on-surface bg-surface-container-highest px-2 py-0.5 border border-ghost">
+                        {Math.round(match.similarity_score ?? match.similarity ?? 0)}% MATCH
+                    </span>
                 </div>
-                <div className="p-4 flex-1 overflow-y-auto font-serif text-gray-800 text-sm leading-relaxed bg-orange-50">
+                <div className="p-6 flex-1 overflow-y-auto font-document text-sm leading-relaxed text-on-surface">
                     <DiffTokens
                         tokens={rightTokens}
-                        addedClass="bg-green-200 no-underline rounded px-0.5"
-                        removedClass="bg-red-200 rounded px-0.5"
+                        addedClass="bg-primary/5 text-on-surface no-underline"
+                        removedClass="bg-error/10 text-error no-underline"
                     />
                 </div>
             </div>

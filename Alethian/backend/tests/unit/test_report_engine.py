@@ -21,7 +21,12 @@ class TestCalculateOriginality:
         assert score == 100.0
 
     def test_partial_match_reduces_score(self):
-        matches = [{"submitted_text": "one two three four five", "is_excluded": False}]
+        matches = [{
+            "submitted_text": "one two three four five", 
+            "submitted_start_char": 0,
+            "submitted_end_char": 30, 
+            "is_excluded": False
+        }]
         score = calculate_originality(matches, doc_word_count=10)
         # 5 matched words out of 10 → 50% original
         assert score == pytest.approx(50.0, abs=1.0)
@@ -29,7 +34,7 @@ class TestCalculateOriginality:
     def test_excluded_matches_ignored(self):
         matches = [
             {"submitted_text": "one two three four five", "is_excluded": True},
-            {"submitted_text": "six seven", "is_excluded": False}
+            {"submitted_text": "six seven", "submitted_start_char": 0, "submitted_end_char": 12, "is_excluded": False}
         ]
         score = calculate_originality(matches, doc_word_count=10)
         # Only 2 words matched (excluded one ignored) → 80%

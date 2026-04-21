@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Client from '../api/client';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Shield } from 'lucide-react';
+import { useTheme } from '../components/ThemeContext';
 
 export default function Login() {
     const [email, setEmail] = useState('');
@@ -9,6 +10,13 @@ export default function Login() {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const navigate = useNavigate();
+    const { theme } = useTheme();
+
+    // Default to true dark
+    if (theme !== 'dark') {
+        const root = window.document.documentElement;
+        root.classList.add('dark');
+    }
 
     const handleLogin = async (e) => {
         e.preventDefault();
@@ -18,7 +26,6 @@ export default function Login() {
         try {
             const response = await Client.auth.login(email, password);
             console.log("Login Success:", response);
-            // In a real app, store token in localStorage/Context
             localStorage.setItem('alethian_token', response.access_token);
             localStorage.setItem('alethian_user', JSON.stringify({
                 name: email.split('@')[0],
@@ -40,32 +47,34 @@ export default function Login() {
     };
 
     return (
-        <div className="flex items-center justify-center min-h-screen bg-gray-50">
-            <div className="w-full max-w-md p-8 space-y-6 bg-white rounded-xl shadow-lg border border-gray-100">
-                <div className="text-center">
-                    <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Alethian</h1>
-                    <p className="mt-2 text-sm text-gray-500">Local-First Research Integrity System</p>
+        <div className="flex items-center justify-center min-h-screen bg-background text-on-background">
+            <div className="w-full max-w-md p-10 space-y-8 bg-surface-container shadow-ambient border border-ghost relative overflow-hidden">
+                <div className="absolute top-0 left-0 w-full h-1 bg-primary"></div>
+                <div className="text-center flex flex-col items-center">
+                    <Shield className="w-12 h-12 text-primary mb-4" />
+                    <h1 className="text-3xl font-bold tracking-tight text-on-surface uppercase">Alethian</h1>
+                    <p className="mt-2 text-xs font-mono tracking-widest text-on-surface-variant uppercase">Forensic Intelligence Network</p>
                 </div>
 
-                <form className="space-y-4" onSubmit={handleLogin}>
+                <form className="space-y-6" onSubmit={handleLogin}>
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Email Address</label>
+                        <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Investigator ID</label>
                         <input
                             type="email"
                             required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                            placeholder="faculty@university.edu"
+                            className="w-full px-4 py-3 bg-surface-container-highest border border-ghost text-sm text-on-surface focus:outline-none focus:border-outline transition-colors placeholder:text-on-surface-variant/50"
+                            placeholder="faculty@institution.edu"
                             value={email}
                             onChange={(e) => setEmail(e.target.value)}
                         />
                     </div>
 
                     <div className="space-y-2">
-                        <label className="text-sm font-medium text-gray-700">Password</label>
+                        <label className="text-xs font-bold text-on-surface-variant uppercase tracking-wider">Passcode</label>
                         <input
                             type="password"
                             required
-                            className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                            className="w-full px-4 py-3 bg-surface-container-highest border border-ghost text-sm text-on-surface focus:outline-none focus:border-outline transition-colors placeholder:text-on-surface-variant/50"
                             placeholder="••••••••"
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
@@ -73,7 +82,7 @@ export default function Login() {
                     </div>
 
                     {error && (
-                        <div className="p-3 text-sm text-red-600 bg-red-50 rounded-md">
+                        <div className="p-3 text-xs font-bold text-error bg-error-container border border-error/20 flex items-center">
                             {error}
                         </div>
                     )}
@@ -81,32 +90,25 @@ export default function Login() {
                     <button
                         type="submit"
                         disabled={loading}
-                        className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        className="w-full flex justify-center items-center py-3 px-4 border shadow-ambient text-sm font-bold uppercase tracking-wider text-on-primary bg-primary border-transparent hover:bg-primary-container disabled:opacity-50 transition-colors"
                     >
                         {loading ? (
                             <Loader2 className="w-5 h-5 animate-spin" />
                         ) : (
-                            "Sign In"
+                            "Authenticate"
                         )}
                     </button>
                 </form>
 
-                <div className="relative">
-                    <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-200"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-white text-gray-500">Or continue with</span>
-                    </div>
+                <div className="pt-2">
+                    <button
+                        type="button"
+                        onClick={() => alert("SSO Integration Pending Document Mesh Approval")}
+                        className="w-full flex justify-center py-3 px-4 border border-ghost text-sm font-bold uppercase tracking-wider text-on-surface bg-surface hover:bg-surface-container-highest transition-colors"
+                    >
+                        SSO Handshake
+                    </button>
                 </div>
-
-                <button
-                    type="button"
-                    onClick={() => alert("SSO Not Implemented in Mock")}
-                    className="w-full flex justify-center py-2.5 px-4 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
-                >
-                    Institutional SSO (SAML)
-                </button>
             </div>
         </div>
     );

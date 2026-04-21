@@ -13,6 +13,10 @@ vi.mock('../hooks/useReport', () => ({
   useReport: vi.fn(),
 }));
 
+vi.mock('../hooks/useWebSocket', () => ({
+  useWebSocket: vi.fn(),
+}));
+
 // Mock the Zustand store
 vi.mock('../stores/reportStore', () => ({
   useReportStore: vi.fn(() => ({
@@ -62,7 +66,7 @@ describe('ReportView Component', () => {
         useReport.mockReturnValue({ report: null, loading: true, setReport: vi.fn() });
 
         render(<ReportView />);
-        expect(screen.getByText(/Loading Report/i)).toBeInTheDocument();
+        expect(screen.getByText(/ACQUIRING FORENSIC DATA/i)).toBeInTheDocument();
     });
 
     it('renders report data when loaded', async () => {

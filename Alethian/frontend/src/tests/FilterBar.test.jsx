@@ -20,7 +20,7 @@ describe('FilterBar Component', () => {
         render(<FilterBar />);
 
         // Find and click one of the real checkbox labels
-        const webCheckbox = screen.getByLabelText(/Web Matches/i);
+        const webCheckbox = screen.getByLabelText(/Web Dragnet/i);
         fireEvent.click(webCheckbox);
 
         expect(useReportStore.getState().filterTypes.web).toBe(false);

@@ -1,4 +1,5 @@
 fastapi
+ddgs
 uvicorn
 python-multipart
 requests
@@ -25,3 +26,5 @@ pytest-cov
 pytest-mock
 pytest-asyncio
 pypdf
+pytesseract
+pdf2image

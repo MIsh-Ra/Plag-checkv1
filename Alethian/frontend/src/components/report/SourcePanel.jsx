@@ -4,37 +4,37 @@ export default function SourcePanel({ sources }) {
     const { selectedSourceId, setSelectedSource } = useReportStore();
 
     if (!sources || sources.length === 0) {
-        return <div className="text-sm text-gray-500">No sources matched.</div>;
+        return <div className="text-xs font-mono tracking-widest text-on-surface-variant italic p-5">NO VECTORS IDENTIFIED.</div>;
     }
 
     return (
-        <div>
-            <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-medium text-gray-600">Identified Sources</h3>
+        <div className="p-5">
+            <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xs font-bold uppercase tracking-widest text-on-surface">Source Index</h3>
                 {selectedSourceId && (
-                    <button onClick={() => setSelectedSource(null)} className="text-xs text-blue-600 hover:text-blue-800">Clear Selection</button>
+                    <button aria-label="Clear Source Selection" onClick={() => setSelectedSource(null)} className="text-xs font-mono text-secondary hover:text-secondary-fixed transition-colors">CLEAR</button>
                 )}
             </div>
-            <div className="space-y-3">
+            <div className="space-y-4">
                 {sources.map((src, i) => (
                     <div 
                         key={src.id}
                         onClick={() => setSelectedSource(src.id === selectedSourceId ? null : src.id)}
-                        className={`p-3 rounded border text-sm cursor-pointer transition-colors ${
+                        className={`p-4 rounded-none border text-sm cursor-pointer transition-colors border-l-4 ${
                             selectedSourceId === src.id 
-                            ? 'border-blue-500 bg-blue-50' 
-                            : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50'
+                            ? 'border-y-ghost border-r-ghost border-l-primary bg-surface-container-high shadow-ambient' 
+                            : 'border-y-ghost border-r-ghost border-l-surface hover:border-l-primary-fixed bg-surface-container hover:bg-surface-container-high'
                         }`}
                     >
-                        <div className="flex justify-between items-start mb-1">
-                            <span className="font-medium text-gray-800 truncate" title={src.title || src.domain}>{i+1}. {src.title || src.domain}</span>
-                            <span className="text-xs font-semibold text-gray-500 ml-2">{Math.round(src.coverage_percent || 0)}%</span>
+                        <div className="flex justify-between items-start mb-2">
+                            <span className="font-mono text-xs font-bold text-on-surface truncate tracking-wider" title={src.title || src.domain}>{String(i+1).padStart(2, '0')} // {src.title || src.domain}</span>
+                            <span className="text-xs font-bold text-on-surface-variant ml-3">{Math.round(src.coverage_percent || 0)}%</span>
                         </div>
-                        <div className="text-xs text-gray-500 mb-2 truncate">
-                            {src.type === 'web' ? `🌐 ${src.domain}` : `📄 Internal Archive`}
+                        <div className="text-[10px] font-mono uppercase tracking-widest text-on-surface-variant mb-3 truncate">
+                            {src.type === 'web' ? `WEB // ${src.domain}` : `ARCHIVE // INTERNAL DATABASE`}
                         </div>
-                        <div className="w-full bg-gray-200 rounded-full h-1.5">
-                            <div className="bg-blue-500 h-1.5 rounded-full" style={{ width: `${Math.min(100, Math.max(2, src.coverage_percent || 0))}%` }}></div>
+                        <div className="w-full bg-surface-container-highest h-1 rounded-none overflow-hidden relative">
+                            <div className="absolute top-0 left-0 bottom-0 bg-primary h-full" style={{ width: `${Math.min(100, Math.max(2, src.coverage_percent || 0))}%` }}></div>
                         </div>
                     </div>
                 ))}

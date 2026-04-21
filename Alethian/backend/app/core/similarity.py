@@ -1,6 +1,5 @@
 import os
 import uuid
-import redis
 import logging
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, VectorParams, Distance
@@ -30,21 +29,11 @@ class QdrantManager:
                 vectors_config=VectorParams(size=384, distance=Distance.COSINE)
             )
 
-    def add_chunks(self, document_id, chunks):
-        points = []
-        for c in chunks:
-            points.append(
-                PointStruct(
-                    id=str(uuid.uuid4()),
-                    vector=c["embedding"],
-                    payload={"document_id": document_id, "text": c["text"], "chunk_id": c.get("chunk_id", str(uuid.uuid4()))}
-                )
-            )
-        if points:
-            self.client.upsert(collection_name=self.collection_name, points=points)
-
-    def search_exact(self, embedding, limit=5, score_threshold=0.95):
+    def search_exact(self, embedding, limit=5, score_threshold=None):
         """High-threshold search for exact matches."""
+        if score_threshold is None:
+            from app.core.config import settings
+            score_threshold = settings.SIMILARITY_EXACT_THRESHOLD
         return self.client.search(
             collection_name=self.collection_name,
             query_vector=embedding,
@@ -52,8 +41,11 @@ class QdrantManager:
             score_threshold=score_threshold
         )
     
-    def search_semantic(self, embedding, limit=5, score_threshold=0.85):
+    def search_semantic(self, embedding, limit=5, score_threshold=None):
         """Lower-threshold search for paraphrase matches."""
+        if score_threshold is None:
+            from app.core.config import settings
+            score_threshold = settings.SIMILARITY_SEMANTIC_THRESHOLD
         return self.client.search(
             collection_name=self.collection_name,
             query_vector=embedding,
@@ -61,8 +53,14 @@ class QdrantManager:
             score_threshold=score_threshold
         )
 
-# Remove _lsh and _chunk_store globals
-_qdrant = QdrantManager()
+# Lazy singleton — avoids crash if Qdrant is unreachable at import time
+_qdrant = None
+
+def _get_qdrant():
+    global _qdrant
+    if _qdrant is None:
+        _qdrant = QdrantManager()
+    return _qdrant
 
 def deduplicate(matches):
     unique = []
@@ -78,17 +76,22 @@ def run_similarity(document_id, text, db_session, page_boundaries=None, page_cou
     chunks = process_text_into_chunks(text, page_boundaries, page_count=page_count)
     
     matched_results = []
+    exact_seen = set()  # Track (source_doc_id, submitted_char_start) from exact pass
     
     for chunk in chunks:
+        qdrant = _get_qdrant()
         # 1. Exact match search (high threshold)
-        exact_matches = _qdrant.search_exact(chunk["embedding"])
+        exact_matches = qdrant.search_exact(chunk["embedding"])
         for m in exact_matches:
             payload = m.payload
             if payload and payload.get("document_id") != document_id:
                 # We can skip SequenceMatcher here if threshold is high enough, but let's double check it purely
                 sm = difflib.SequenceMatcher(None, chunk["text"], payload.get("text", ""))
+                src_doc_id = payload.get("document_id")
+                exact_seen.add((src_doc_id, chunk["char_start"]))
+                from app.core.config import settings
                 matched_results.append({
-                    "type": "internal_exact" if sm.ratio() > 0.9 else "internal_paraphrase",
+                    "type": "internal_exact" if sm.ratio() > settings.SIMILARITY_EXACT_RATIO else "internal_paraphrase",
                     "submitted_text": chunk["text"],
                     "source_text": payload.get("text", ""),
                     "submitted_page": chunk["page"],        # ← real page
@@ -96,15 +99,19 @@ def run_similarity(document_id, text, db_session, page_boundaries=None, page_cou
                     "submitted_start_char": chunk["char_start"],
                     "submitted_end_char": chunk["char_end"],
                     "similarity_score": m.score * 100,
-                    "source_document_id": payload.get("document_id"),
+                    "source_document_id": src_doc_id,
                     "source_title": payload.get("title", "Archive Document")
                 })
         
         # 2. Semantic search (lower threshold, excludes already-matched)
-        semantic_matches = _qdrant.search_semantic(chunk["embedding"])
+        semantic_matches = qdrant.search_semantic(chunk["embedding"])
         for m in semantic_matches:
              payload = m.payload
              if payload and payload.get("document_id") != document_id:
+                 src_doc_id = payload.get("document_id")
+                 # Skip if this (source, submitted_chunk) pair was already found in exact pass
+                 if (src_doc_id, chunk["char_start"]) in exact_seen:
+                     continue
                  matched_results.append({
                      "type": "internal_paraphrase",
                      "submitted_text": chunk["text"],
@@ -114,13 +121,27 @@ def run_similarity(document_id, text, db_session, page_boundaries=None, page_cou
                      "submitted_start_char": chunk["char_start"],
                      "submitted_end_char": chunk["char_end"],
                      "similarity_score": m.score * 100,
-                     "source_document_id": payload.get("document_id"),
+                     "source_document_id": src_doc_id,
                      "source_title": payload.get("title", "Archive Document")
                  })
                  
     return deduplicate(matched_results)
 
 def index_document(document_id, text, title="Unknown Document", page_boundaries=None, page_count=1):
+    qdrant = _get_qdrant()
+    
+    # Delete existing vectors for this document to prevent duplicates (F-40)
+    from qdrant_client.models import Filter, FieldCondition, MatchValue
+    try:
+        qdrant.client.delete(
+            collection_name=qdrant.collection_name,
+            points_selector=Filter(
+                must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
+            )
+        )
+    except Exception as e:
+        logger.warning(f"Failed to delete old vectors for {document_id}: {e}")
+    
     chunks = process_text_into_chunks(text, page_boundaries, page_count=page_count)
     points = []
     for c in chunks:
@@ -135,6 +156,6 @@ def index_document(document_id, text, title="Unknown Document", page_boundaries=
             }
         ))
     if points:
-        _qdrant.client.upsert(collection_name=_qdrant.collection_name, points=points)
+        qdrant.client.upsert(collection_name=qdrant.collection_name, points=points)
     
     return True

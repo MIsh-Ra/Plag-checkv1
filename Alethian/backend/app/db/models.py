@@ -57,6 +57,8 @@ class Document(Base):
     page_count = Column(Integer, nullable=True)
     risk_level = Column(String, nullable=True)
     originality_score = Column(Float, nullable=True)
+    # Stores [{page: int, text: str, char_start: int, char_end: int}, ...] for page-aware rendering
+    page_texts = Column(JSON, nullable=True)
     
     user = relationship("User", backref="documents")
 
@@ -67,6 +69,7 @@ class Report(Base):
     score = Column(Float, nullable=True)
     created_at = Column(DateTime, default=lambda: datetime.datetime.now(datetime.timezone.utc))
     
+    doc_word_count = Column(Integer, nullable=True)  # Actual word count for consistent recalculation
     risk_level = Column(String, nullable=True)
     status = Column(String, default="unreviewed")
     reviewed_by = Column(String, ForeignKey("users.id"), nullable=True)
@@ -90,7 +93,8 @@ class Source(Base):
     
     type = Column(String, nullable=True)
     domain = Column(String, nullable=True)
-    document_id = Column(String, ForeignKey("documents.id"), nullable=True)
+    document_id = Column(String, ForeignKey("documents.id"), nullable=True)  # The MATCHED source document (internal) or NULL (web)
+    report_document_id = Column(String, ForeignKey("documents.id"), nullable=True)  # The analyzed (submitted) document
     coverage_percent = Column(Float, nullable=True)
     match_count = Column(Integer, nullable=True)
     pages_affected = Column(JSON, nullable=True)

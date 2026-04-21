@@ -20,22 +20,6 @@ celery_app.conf.update(
     enable_utc=True,
 )
 
-def _fallback_extract(file_path: str) -> str:
-    """Emergency fallback using pypdf if Grobid fails or is unreachable."""
-    try:
-        import pypdf
-        text = []
-        with open(file_path, "rb") as f:
-            reader = pypdf.PdfReader(f)
-            for page in reader.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text.append(extracted)
-        return "\n\n".join(text)
-    except Exception as e:
-        import logging
-        logging.getLogger(__name__).error(f"Fallback extraction failed: {e}")
-        return ""
 
 @celery_app.task(bind=True, name="analyze_document")
 def analyze_document(self, document_id: str, file_path: str):
@@ -44,14 +28,14 @@ def analyze_document(self, document_id: str, file_path: str):
     from app.core.similarity import run_similarity, index_document
     from app.core.web_dragnet import run_dragnet
     from app.core.report_engine import calculate_originality, generate_heatmap
-    from app.core.ingestion import GrobidClient
+    from app.core.text_extraction import extract_text_from_pdf
     from app.core.config import settings
     import logging
 
     logger = logging.getLogger(__name__)
     db = SessionLocal()
 
-    # Redis client for status broadcasting (M-04)
+    # Redis client for status broadcasting
     try:
         _status_redis = _redis.Redis(
             host=os.getenv("REDIS_HOST", "localhost"),
@@ -62,7 +46,6 @@ def analyze_document(self, document_id: str, file_path: str):
         _status_redis = None
 
     def broadcast_status(stage: str, progress: int, message: str = ""):
-        """Publish stage update to Redis pub/sub for WebSocket consumers."""
         if _status_redis:
             try:
                 _status_redis.publish(
@@ -79,10 +62,10 @@ def analyze_document(self, document_id: str, file_path: str):
 
         # --- File Size Check ---
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        if hasattr(settings, 'MAX_UPLOAD_SIZE_MB') and file_size_mb > getattr(settings, 'MAX_UPLOAD_SIZE_MB', 100):
-             doc.status = DocumentStatus.failed
-             db.commit()
-             return {"error": f"File too large: {file_size_mb:.1f}MB"}
+        if file_size_mb > getattr(settings, 'MAX_UPLOAD_SIZE_MB', 100):
+            doc.status = DocumentStatus.failed
+            db.commit()
+            return {"error": f"File too large: {file_size_mb:.1f}MB"}
 
         # --- Stage 1: Ingestion ---
         doc.status = DocumentStatus.processing
@@ -90,74 +73,107 @@ def analyze_document(self, document_id: str, file_path: str):
         logger.info(f"[{document_id}] Stage: ingestion")
         broadcast_status("ingesting", 10, "Parsing PDF with Grobid...")
 
-        grobid = GrobidClient(host=settings.GROBID_URL)
-        with open(file_path, "rb") as f:
-            file_bytes = f.read()
-        
-        try:
-            parsed = grobid.process_pdf(file_bytes)
-            text = parsed["body_text"]
-            page_count = parsed.get("page_count", 1) or 1
-            doc.title = str(parsed.get("title", doc.title))[:250] # Limit size safely
-            doc.page_count = page_count
-            
-            if not text or len(text.strip()) < 50:
-                raise ValueError("Grobid extracted very little or no text. Likely a non-standard layout.")
-        except Exception as e:
-            logger.warning(f"[{document_id}] Grobid failed or returned empty text, falling back to raw text extraction: {e}")
-            text = _fallback_extract(file_path)
-            page_count = max(1, len(text) // 3000)
-            doc.page_count = page_count
-        
+        parsed = extract_text_from_pdf(file_path, grobid_url=settings.GROBID_URL)
+        text = parsed.get("body_text", "")
+        page_texts = parsed.get("page_texts", [])        # [{page, text, char_start, char_end}]
+        page_boundaries = parsed.get("page_boundaries", [])  # [(char_start, char_end, page_num)]
+
+        doc.title = str(parsed.get("title", doc.title))[:250]
+        doc.page_count = parsed.get("page_count", 1)
+
+        if not text or len(text.strip()) < 50:
+            logger.error(f"[{document_id}] All extraction methods failed.")
+            doc.status = DocumentStatus.failed
+            db.commit()
+            return {"error": "No text could be extracted from this PDF."}
+
+        logger.info(f"[{document_id}] Extracted via {parsed.get('extraction_method')} "
+                    f"({len(text)} chars, {doc.page_count} pages, {len(page_texts)} page_texts)")
+
         doc.content = text
+        doc.page_texts = page_texts  # persist page-indexed text
         db.commit()
 
-        # --- Stage 1.5: Index for future comparisons (moved before similarity) ---
+        # --- Stage 1.5: Index for future comparisons ---
         logger.info(f"[{document_id}] Stage: indexing")
         broadcast_status("indexing", 25, "Indexing document into archive...")
-        index_document(document_id, text, title=doc.title, page_count=doc.page_count or 1)
+        index_document(document_id, text, title=doc.title,
+                       page_boundaries=page_boundaries, page_count=doc.page_count or 1)
 
         # --- Stage 2: Internal Similarity ---
         logger.info(f"[{document_id}] Stage: internal_similarity")
         broadcast_status("internal_similarity", 40, "Comparing against internal archive...")
-        internal_matches = run_similarity(document_id, text, db, page_count=doc.page_count or 1)
+        internal_matches = run_similarity(
+            document_id, text, db,
+            page_boundaries=page_boundaries,
+            page_count=doc.page_count or 1
+        )
 
         # --- Stage 3: Web Dragnet ---
         logger.info(f"[{document_id}] Stage: web_dragnet")
         broadcast_status("web_dragnet", 60, "Searching web sources...")
-        web_matches = run_dragnet(document_id, text, internal_matches)
+        web_matches = run_dragnet(
+            document_id, text, internal_matches,
+            page_boundaries=page_boundaries,
+            page_count=doc.page_count or 1
+        )
 
         # --- Stage 4: Report Generation ---
         logger.info(f"[{document_id}] Stage: report_generation")
         broadcast_status("report_generation", 85, "Generating originality report...")
         all_raw_matches = internal_matches + web_matches
 
-        score = calculate_originality(all_raw_matches, len(text.split()))
+        doc_word_count = len(text.split())
+        score = calculate_originality(all_raw_matches, doc_word_count)
         risk = "high" if score < 50 else ("moderate" if score < 80 else "low")
-        
-        report = Report(document_id=doc.id, score=score, risk_level=risk)
+
+        report = Report(
+            document_id=doc.id,
+            score=score,
+            risk_level=risk,
+            doc_word_count=doc_word_count
+        )
         db.add(report)
         db.flush()
 
-        # Persist Sources
-        source_map = {}
+        # --- Persist Sources with computed coverage stats ---
+        source_map = {}     # key -> source_id
+        source_matches = {}  # key -> [match dicts]
+
         for m in all_raw_matches:
             key = m.get("source_document_id") or m.get("url")
             if not key:
                 continue
             if key not in source_map:
                 src = Source(
-                    type="web" if "web" in m.get("type", "web") else "internal",
+                    type="web" if m.get("type") == "web" else "internal",
                     url=m.get("url"),
                     title=m.get("source_title") or m.get("domain", "Unknown Source"),
                     domain=m.get("domain", ""),
-                    document_id=doc.id,  # FK to the document being analyzed, not the matched source
+                    document_id=m.get("source_document_id"),
+                    report_document_id=doc.id,
                 )
                 db.add(src)
                 db.flush()
                 source_map[key] = src.id
+                source_matches[key] = []
+            source_matches[key].append(m)
 
-        # Persist Matches
+        # Compute coverage_percent, match_count, pages_affected per source
+        for key, src_id in source_map.items():
+            src_obj = db.query(Source).filter(Source.id == src_id).first()
+            if not src_obj:
+                continue
+            ms = source_matches[key]
+            src_obj.match_count = len(ms)
+            src_obj.pages_affected = sorted(set(m.get("submitted_page", 1) for m in ms))
+            # coverage = sum of matched words / total doc words
+            total_matched_words = sum(len(m.get("submitted_text", "").split()) for m in ms)
+            src_obj.coverage_percent = round(
+                min(100.0, (total_matched_words / max(1, doc_word_count)) * 100), 2
+            )
+
+        # --- Persist Matches ---
         for m in all_raw_matches:
             key = m.get("source_document_id") or m.get("url")
             match_record = Match(
@@ -175,8 +191,8 @@ def analyze_document(self, document_id: str, file_path: str):
             )
             db.add(match_record)
 
-        # Generate & Persist Heatmap
-        heatmap = generate_heatmap(all_raw_matches, doc.page_count)
+        # --- Generate & Persist Heatmap ---
+        heatmap = generate_heatmap(all_raw_matches, doc.page_count, doc_word_count=doc_word_count)
         for h in heatmap:
             hp = HeatmapPage(
                 report_id=report.id,
@@ -190,18 +206,39 @@ def analyze_document(self, document_id: str, file_path: str):
             )
             db.add(hp)
 
-
         doc.status = DocumentStatus.complete
-        # Set doc originality metric denormalized mapping properties assuming these fields exist natively
-        doc.score = score
         doc.risk_level = risk
         doc.originality_score = score
 
         db.commit()
+
+        if file_path and os.path.exists(file_path):
+            try:
+                os.remove(file_path)
+            except OSError:
+                pass
+
         broadcast_status("complete", 100, "Analysis complete.")
+
     except Exception as e:
-        logger.error(f"Failed worker operation {e}")
+        logger.error(f"Failed worker operation: {e}", exc_info=True)
         db.rollback()
+
+        # Rollback Qdrant inserts
+        try:
+            from app.core.similarity import _get_qdrant
+            from qdrant_client.models import Filter, FieldCondition, MatchValue
+            qdrant = _get_qdrant()
+            if qdrant:
+                qdrant.client.delete(
+                    collection_name=qdrant.collection_name,
+                    points_selector=Filter(
+                        must=[FieldCondition(key="document_id", match=MatchValue(value=document_id))]
+                    )
+                )
+        except Exception as delete_ex:
+            logger.error(f"Failed to rollback Qdrant changes: {delete_ex}")
+
         try:
             doc = db.query(Document).filter(Document.id == document_id).first()
             if doc:
@@ -211,9 +248,4 @@ def analyze_document(self, document_id: str, file_path: str):
             pass
         raise e
     finally:
-        if file_path and os.path.exists(file_path):
-             try:
-                 os.remove(file_path)
-             except OSError:
-                 pass
         db.close()

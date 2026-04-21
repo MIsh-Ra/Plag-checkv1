@@ -19,11 +19,12 @@ class SourceResponse(SourceBase):
 
 class MatchBase(BaseModel):
     similarity: float
+    similarity_score: Optional[float] = None   # alias used by frontend
     submitted_text: str
     source_text: str
     is_excluded: bool
     comment: Optional[str] = None
-    
+
     type: Optional[str] = None
     submitted_page: Optional[int] = None
     source_page: Optional[int] = None
@@ -32,6 +33,7 @@ class MatchBase(BaseModel):
     match_length_words: Optional[int] = None
     exclude_reason: Optional[str] = None
     color_code: Optional[str] = None
+    source_id: Optional[str] = None
 
 class MatchExcludeRequest(BaseModel):
     is_excluded: bool
@@ -42,7 +44,7 @@ class MatchCommentRequest(BaseModel):
 
 class MatchResponse(MatchBase):
     id: str
-    report_id: str
+    report_id: Optional[str] = None   # Optional — not present in inline serialization
     source: Optional[SourceResponse] = None
 
     model_config = ConfigDict(from_attributes=True)

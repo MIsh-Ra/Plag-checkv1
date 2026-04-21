@@ -47,6 +47,7 @@ from app.api.dependencies import get_current_user
 from app.db.models import User
 
 from app.core.config import settings
+from pathlib import Path
 
 from app.core.rate_limit import limiter
 from fastapi import Request
@@ -71,7 +72,13 @@ async def upload_document(
             raise HTTPException(status_code=413, detail=f"File too large: {size_mb:.1f}MB")
 
         safe_name = re.sub(r'[^\w\-.]', '_', file.filename.split('/')[-1].split('\\')[-1])
-        file_path = os.path.join(tempfile.gettempdir(), f"{uuid.uuid4()}_{safe_name}")
+        # Use a persistent upload directory shared between API and Celery worker
+        if settings.UPLOAD_DIR:
+            upload_dir = Path(settings.UPLOAD_DIR)
+        else:
+            upload_dir = Path(__file__).resolve().parents[3] / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        file_path = str(upload_dir / f"{uuid.uuid4()}_{safe_name}")
         with open(file_path, "wb") as f:
             f.write(content)
             
@@ -115,7 +122,8 @@ async def list_documents(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    query = db.query(Document).filter(Document.user_id == current_user.id)
+    from sqlalchemy.orm import joinedload
+    query = db.query(Document).options(joinedload(Document.report)).filter(Document.user_id == current_user.id)
     if status:
         query = query.filter(Document.status == status)
     if course_id:
@@ -174,7 +182,7 @@ async def websocket_endpoint(websocket: WebSocket, document_id: str):
 
     try:
         while True:
-            msg = pubsub.get_message(timeout=1.0)
+            msg = pubsub.get_message(ignore_subscribe_messages=True)
             if msg and msg["type"] == "message":
                 data = _json.loads(msg["data"])
                 await websocket.send_json(data)
