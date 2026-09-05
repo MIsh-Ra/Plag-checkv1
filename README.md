@@ -1,19 +1,4 @@
-Claude finished the response
 
-do you have enough context about my alteian project that you can create me a readme for it if yes do it
-Read a memory, created a file
-
-Done. README created with the project overview, stack, architecture, how it works, and known limitations. It covers both phases and flags the evaluation metrics feedback from your defense.
-Presented file
-
-You can download it now. If you want to add setup/installation instructions, deployment steps, or example usage, just let me know.
-Readme
-Document·MD 
-Write a message…
-
-
-Claude is AI and can make mistakes.
-Readme · MD
 # Alethian
  
 A self-hosted plagiarism detection system for academic integrity checking.
