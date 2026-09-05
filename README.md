@@ -49,9 +49,7 @@ Alethian is a BTP (B.Tech project) that detects plagiarism in academic submissio
 - **Evaluation Metrics**: Phase 1 defense highlighted the need for formal metrics (precision, recall, F1 on test sets)
 - **Data Sovereignty**: All data remains on-premises; no external APIs used
 - **Real-World Validation**: Tested with LNMIIT's DSpace corpus (500+ documents)
-## Getting Started
- 
-*(Add deployment and setup instructions based on your current environment)*
+
  
 ## Project Status
  
@@ -60,5 +58,5 @@ Alethian is a BTP (B.Tech project) that detects plagiarism in academic submissio
 - Current: Ready for integration or further optimization
 ---
  
-Built for LNMIIT's B.Tech project (2025-2026)
+
  
